@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Claude Code API Proxy Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <div class="header-left">
+      <h1>Claude Code</h1>
+      <nav class="header-tabs" id="headerTabs">
+        <button class="header-tab active" data-view="dashboard">Inspector</button>
+        <button class="header-tab" data-view="claude">Claude</button>
+        <button class="header-tab" data-view="reference">Reference</button>
+      </nav>
+    </div>
+    <div class="header-actions">
+      <span id="status" class="status disconnected">disconnected</span>
+      <button id="clearBtn">Clear History</button>
+    </div>
+  </header>
+
+  <!-- ===== DASHBOARD VIEW ===== -->
+  <main id="view-dashboard">
+    <aside id="timeline">
+      <div id="timeline-header">
+        <span>Timeline</span>
+        <button id="resetBtn">Reset</button>
+      </div>
+      <div id="timeline-list"></div>
+    </aside>
+    <section id="detail">
+      <div id="empty-state">
+        <p>No interaction selected.</p>
+        <p class="hint">Run <code>ANTHROPIC_BASE_URL=http://localhost:3456 claude -p "prompt"</code> to capture API calls.</p>
+      </div>
+      <div id="detail-content" class="hidden"></div>
+    </section>
+  </main>
+
+  <!-- ===== CLAUDE VIEW ===== -->
+  <div id="view-claude" class="hidden">
+    <div class="chat-container">
+      <div class="chat-messages" id="chatMessages">
+        <div class="chat-welcome">
+          <p>Send a prompt to Claude through the proxy.</p>
+          <p class="hint">All API calls will appear in the Dashboard tab.</p>
+        </div>
+      </div>
+      <div class="chat-input-area">
+        <div class="chat-status-bar">
+          <span id="chatStatus" class="chat-status idle">idle</span>
+          <button id="chatStopBtn" class="chat-stop hidden">Stop</button>
+        </div>
+        <div class="chat-input-row">
+          <textarea id="chatInput" placeholder="Send a prompt to Claude..." rows="3"></textarea>
+          <button id="chatSendBtn" class="chat-send">Send</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== REFERENCE VIEW ===== -->
+  <div id="view-reference" class="hidden">
+    <div class="ref-container">
+
+      <!-- Stats bar -->
+      <div class="ref-stats">
+        <div class="ref-stat"><span class="ref-stat-value">25</span><span class="ref-stat-label">Tools</span></div>
+        <div class="ref-stat"><span class="ref-stat-value">6</span><span class="ref-stat-label">Skills</span></div>
+        <div class="ref-stat"><span class="ref-stat-value">5</span><span class="ref-stat-label">Hook Types</span></div>
+        <div class="ref-stat"><span class="ref-stat-value">80+</span><span class="ref-stat-label">Parameters</span></div>
+      </div>
+
+      <!-- Section tabs -->
+      <div class="ref-nav" id="refNav">
+        <button class="ref-nav-btn active" data-section="tools">Tools <span class="ref-btn-count">(25)</span></button>
+        <button class="ref-nav-btn" data-section="skills">Skills <span class="ref-btn-count">(6)</span></button>
+        <button class="ref-nav-btn" data-section="hooks">Hooks <span class="ref-btn-count">(5)</span></button>
+      </div>
+
+      <!-- ===================== TOOLS ===================== -->
+      <div class="ref-panel active" id="ref-tools">
+
+        <div class="ref-filter" id="refFilter">
+          <button class="ref-filter-btn active" data-cat="all">All</button>
+          <button class="ref-filter-btn" data-cat="file">File Ops</button>
+          <button class="ref-filter-btn" data-cat="search">Search</button>
+          <button class="ref-filter-btn" data-cat="exec">Execution</button>
+          <button class="ref-filter-btn" data-cat="agent">Agents</button>
+          <button class="ref-filter-btn" data-cat="web">Web</button>
+          <button class="ref-filter-btn" data-cat="task">Tasks</button>
+          <button class="ref-filter-btn" data-cat="workflow">Workflow</button>
+          <button class="ref-filter-btn" data-cat="schedule">Scheduling</button>
+        </div>
+
+        <!-- File Operations -->
+        <div class="ref-category" data-cat="file">
+          <div class="ref-category-title">File Operations</div>
+          <div class="ref-grid">
+
+            <div class="ref-card">
+              <div class="ref-card-header" onclick="toggleRef(this)">
+                <span><span class="ref-name">Read</span> <span class="ref-tag tag-ro">read-only</span></span>
+                <span class="ref-brief">Read files, images, PDFs, and notebooks from the filesystem</span>
+                <span class="ref-chevron">&#9654;</span>
+              </div>
+              <div class="ref-card-body">
+                <h4>Description</h4>
+                <p>Reads a file from the local filesystem. Supports text files, images (PNG, JPG &mdash; rendered visually), PDFs (up to 20 pages per request), and Jupyter notebooks (.ipynb). Results returned with line numbers. Default: 2000 lines from start.</p>
+                <h4>Parameters</h4>
+                <table class="ref-params"><tr><th>Name</th><th>Type</th><th>Req</th><th>Description</th></tr>
+                  <tr><td class="rp-name">file_path</td><td class="rp-type">string</td><td class="rp-req">req</td><td>Absolute path to the file</td></tr>
+                  <tr><td class="rp-name">offset</td><td class="rp-type">number</td><td class="rp-opt">opt</td><td>Line number to start reading from</td></tr>
+                  <tr><td class="rp-name">limit</td><td class="rp-type">number</td><td class="rp-opt">opt</td><td>Number of lines to read</td></tr>
+                  <tr><td class="rp-name">pages</td><td class="rp-type">string</td><td class="rp-opt">opt</td><td>Page range for PDFs, e.g. <code>"1-5"</code>. Max 20 pages.</td></tr>
+                </table>
+                <h4>Key Behaviors</h4>
+                <ul><li>Path must be absolute</li><li>Images rendered visually (multimodal)</li><li>Notebooks return all cells with outputs</li><li>Cannot read directories &mdash; use <code>ls</code> via Bash</li></ul>
+              </div>
+            </div>
+
+            <div class="ref-card">
+              <div class="ref-card-header" onclick="toggleRef(this)">
+                <span><span class="ref-name">Write</span> <span class="ref-tag tag-wr">write</span></span>
+                <span class="ref-brief">Create new files or completely rewrite existing ones</span>
+                <span class="ref-chevron">&#9654;</span>
+              </div>
+              <div class="ref-card-body">
+                <h4>Description</h4>
+                <p>Writes content to a file, overwriting any existing content. Existing files must be read first via Read or the tool errors. Prefer Edit for partial modifications.</p>
+                <h4>Parameters</h4>
+                <table class="ref-params"><tr><th>Name</th><th>Type</th><th>Req</th><th>Description</th></tr>
+                  <tr><td class="rp-name">file_path</td><td class="rp-type">string</td><td class="rp-req">req</td><td>Absolute path to the file</td></tr>
+                  <tr><td class="rp-name">content</td><td class="rp-type">string</td><td class="rp-req">req</td><td>Full content to write</td></tr>
+                </table>
+              </div>
+            </div>
+
+            <div class="ref-card">
+              <div class="ref-card-header" onclick="toggleRef(this)">
+                <span><span class="ref-name">Edit</span> <span class="ref-tag tag-wr">write</span></span>
+                <span class="ref-brief">Make targeted string replacements in files</span>
+                <span class="ref-chevron">&#9654;</span>
+              </div>
+              <div class="ref-card-body">
+                <h4>Description</h4>
+                <p>Exact string replacements in files. old_string must be unique or use <code>replace_all</code>. File must have been read first.</p>
+                <h4>Parameters</h4>
+                <table class="ref-params"><tr><th>Name</th><th>Type</th><th>Req</th><th>Description</th></tr>
+                  <tr><td class="rp-name">file_path</td><td class="rp-type">string</td><td class="rp-req">req</td><td>Absolute path to the file</td></tr>
+                  <tr><td class="rp-name">old_string</td><td class="rp-type">string</td><td class="rp-req">req</td><td>Exact text to find and replace</td></tr>
+                  <tr><td class="rp-name">new_string</td><td class="rp-type">string</td><td class="rp-req">req</td><td>Replacement text</td></tr>
+                  <tr><td class="rp-name">replace_all</td><td class="rp-type">boolean</td><td class="rp-opt">opt</td><td>Replace all occurrences. Default: false</td></tr>
+                </table>
+              </div>
+            </div>
+
+            <div class="ref-card">
+              <div class="ref-card-header" onclick="toggleRef(this)">
+                <span><span class="ref-name">NotebookEdit</span> <span class="ref-tag tag-wr">write</span></span>
+                <span class="ref-brief">Edit, insert, or delete cells in Jupyter notebooks</span>
+                <span class="ref-chevron">&#9654;</span>
+              </div>
+              <div class="ref-card-body">
+                <h4>Description</h4>
+                <p>Replaces, inserts, or deletes cells in .ipynb files by cell index (0-based).</p>
+                <h4>Parameters</h4>
+                <table class="ref-params"><tr><th>Name</th><th>Type</th><th>Req</th><th>Description</th></tr>
+                  <tr><td class="rp-name">notebook_path</td><td class="rp-type">string</td><td class="rp-req">req</td><td>Absolute path to .ipynb file</td></tr>
+                  <tr><td class="rp-name">new_source</td><td class="rp-type">string</td><td class="rp-req">req</td><td>New source content for the cell</td></tr>
+                  <tr><td class="rp-name">cell_id</td><td class="rp-type">string</td><td class="rp-opt">opt</td><td>Cell ID to edit or insert after</td></tr>
+                  <tr><td class="rp-name">cell_type</td><td class="rp-type">string</td><td class="rp-opt">opt</td><td><code>"code"</code> or <code>"markdown"</code></td></tr>
+                  <tr><td class="rp-name">edit_mode</td><td class="rp-type">string</td><td class="rp-opt">opt</td><td><code>"replace"</code>, <code>"insert"</code>, or <code>"delete"</code></td></tr>
+                </table>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- Search -->
+        <div class="ref-category" data-cat="search">
+          <div class="ref-category-title">Search</div>
+          <div class="ref-grid">
+
+            <div class="ref-card">
+              <div class="ref-card-header" onclick="toggleRef(this)">
+                <span><span class="ref-name">Glob</span> <span class="ref-tag tag-ro">read-only</span></span>
+                <span class="ref-brief">Find files by name pattern (e.g. **/*.ts)</span>
+                <span class="ref-chevron">&#9654;</span>
+              </div>
+              <div class="ref-card-body">
+                <h4>Description</h4>
+                <p>Fast file pattern matching at any codebase size. Returns matching paths sorted by modification time. Use instead of <code>find</code> or <code>ls</code>.</p>
+                <h4>Parameters</h4>
+                <table class="ref-params"><tr><th>Name</th><th>Type</th><th>Req</th><th>Description</th></tr>
+                  <tr><td class="rp-name">pattern</td><td class="rp-type">string</td><td class="rp-req">req</td><td>Glob pattern, e.g. <code>"**/*.js"</code></td></tr>
+                  <tr><td class="rp-name">path</td><td class="rp-type">string</td><td class="rp-opt">opt</td><td>Directory to search in. Default: cwd</td></tr>
+                </table>
+              </div>
+            </div>
+
+            <div class="ref-card">
+              <div class="ref-card-header" onclick="toggleRef(this)">
+                <span><span class="ref-name">Grep</span> <span class="ref-tag tag-ro">read-only</span></span>
+                <span class="ref-brief">Search file contents with regex (powered by ripgrep)</span>
+                <span class="ref-chevron">&#9654;</span>
+              </div>
+              <div class="ref-card-body">
+                <h4>Description</h4>
+                <p>Content search built on ripgrep. Supports regex, file type/glob filtering, context lines, multiline matching, and multiple output modes.</p>
+                <h4>Parameters</h4>
+                <table class="ref-params"><tr><th>Name</th><th>Type</th><th>Req</th><th>Description</th></tr>
+                  <tr><td class="rp-name">pattern</td><td class="rp-type">string</td><td class="rp-req">req</td><td>Regex pattern to search for</td></tr>
+                  <tr><td class="rp-name">path</td><td class="rp-type">string</td><td class="rp-opt">opt</td><td>File or directory. Default: cwd</td></tr>
+                  <tr><td class="rp-name">output_mode</td><td class="rp-type">string</td><td class="rp-opt">opt</td><td><code>"files_with_matches"</code> (default), <code>"content"</code>, <code>"count"</code></td></tr>
+                  <tr><td class="rp-name">glob</td><td class="rp-type">string</td><td class="rp-opt">opt</td><td>Glob filter, e.g. <code>"*.js"</code></td></tr>
+                  <tr><td class="rp-name">type</td><td class="rp-type">string</td><td class="rp-opt">opt</td><td>File type: <code>"js"</code>, <code>"py"</code>, <code>"rust"</code>, etc.</td></tr>
+                  <tr><td class="rp-name">-i</td><td class="rp-type">boolean</td><td class="rp-opt">opt</td><td>Case-insensitive search</td></tr>
+                  <tr><td class="rp-name">-A / -B / -C</td><td class="rp-type">number</td><td class="rp-opt">opt</td><td>Context lines after / before / around matches</td></tr>
+                  <tr><td class="rp-name">multiline</td><td class="rp-type">boolean</td><td class="rp-opt">opt</td><td>Dot matches newlines. Default: false</td></tr>
+                  <tr><td class="rp-name">head_limit</td><td class="rp-type">number</td><td class="rp-opt">opt</td><td>Limit to first N results</td></tr>
+                  <tr><td class="rp-name">offset</td><td class="rp-type">number</td><td class="rp-opt">opt</td><td>Skip first N results</td></tr>
+                </table>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- Execution -->
+        <div class="ref-category" data-cat="exec">
+          <div class="ref-category-title">Execution</div>
+          <div class="ref-grid">
+
+            <div class="ref-card">
+              <div class="ref-card-header" onclick="toggleRef(this)">
+                <span><span class="ref-name">Bash</span> <span class="ref-tag tag-ex">exec</span></span>
+                <span class="ref-brief">Execute shell commands and terminal operations</span>
+                <span class="ref-chevron">&#9654;</span>
+              </div>
+              <div class="ref-card-body">
+                <h4>Description</h4>
+                <p>Executes bash commands. Working directory persists between calls; shell state (vars, aliases) does not. Environment initialized from user's profile.</p>
+                <h4>Parameters</h4>
+                <table class="ref-params"><tr><th>Name</th><th>Type</th><th>Req</th><th>Description</th></tr>
+                  <tr><td class="rp-name">command</td><td class="rp-type">string</td><td class="rp-req">req</td><td>The bash command to execute</td></tr>
+                  <tr><td class="rp-name">description</td><td class="rp-type">string</td><td class="rp-req">req</td><td>Description of what the command does</td></tr>
+                  <tr><td class="rp-name">timeout</td><td class="rp-type">number</td><td class="rp-opt">opt</td><td>Timeout in ms (max 600000). Default: 120000</td></tr>
+                  <tr><td class="rp-name">run_in_background</td><td class="rp-type">boolean</td><td class="rp-opt">opt</td><td>Run in background; notified on completion</td></tr>
+                </table>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- Agents -->
+        <div class="ref-category" data-cat="agent">
+          <div class="ref-category-title">Agents &amp; Delegation</div>
+          <div class="ref-grid">
+
+            <div class="ref-card">
+              <div class="ref-card-header" onclick="toggleRef(this)">
+                <span><span class="ref-name">Agent</span> <span class="ref-tag tag-mt">meta</span></span>
+                <span class="ref-brief">Launch specialized sub-agents for complex or parallel tasks</span>
+                <span class="ref-chevron">&#9654;</span>
+              </div>
+              <div class="ref-card-body">
+                <h4>Description</h4>
+                <p>Launches autonomous sub-agents (subprocesses) for complex, multi-step tasks. Each agent has its own context and tools. Multiple agents can run concurrently.</p>
+                <h4>Parameters</h4>
+                <table class="ref-params"><tr><th>Name</th><th>Type</th><th>Req</th><th>Description</th></tr>
+                  <tr><td class="rp-name">prompt</td><td class="rp-type">string</td><td class="rp-req">req</td><td>Complete task description</td></tr>
+                  <tr><td class="rp-name">description</td><td class="rp-type">string</td><td class="rp-req">req</td><td>Short (3-5 word) summary</td></tr>
+                  <tr><td class="rp-name">subagent_type</td><td class="rp-type">string</td><td class="rp-opt">opt</td><td><code>"general-purpose"</code>, <code>"Explore"</code>, <code>"Plan"</code>, <code>"claude-code-guide"</code>, <code>"statusline-setup"</code></td></tr>
+                  <tr><td class="rp-name">model</td><td class="rp-type">string</td><td class="rp-opt">opt</td><td><code>"sonnet"</code>, <code>"opus"</code>, or <code>"haiku"</code></td></tr>
+                  <tr><td class="rp-name">run_in_background</td><td class="rp-type">boolean</td><td class="rp-opt">opt</td><td>Run in background</td></tr>
+                  <tr><td class="rp-name">isolation</td><td class="rp-type">string</td><td class="rp-opt">opt</td><td><code>"worktree"</code> &mdash; isolated git worktree</td></tr>
+                </table>
+                <h4>Agent Types</h4>
+                <ul>
+                  <li><strong>general-purpose</strong> &mdash; Full tool access; research, code, multi-step</li>
+                  <li><strong>Explore</strong> &mdash; Fast codebase exploration</li>
+                  <li><strong>Plan</strong> &mdash; Software architect; designs plans</li>
+                  <li><strong>claude-code-guide</strong> &mdash; Answers Claude Code / API questions</li>
+                  <li><strong>statusline-setup</strong> &mdash; Status line configuration</li>
+                </ul>
+              </div>
+            </div>
+
+            <div class="ref-card">
+              <div class="ref-card-header" onclick="toggleRef(this)">
+                <span><span class="ref-name">Skill</span> <span class="ref-tag tag-mt">meta</span></span>
+                <span class="ref-brief">Invoke slash-command skills (/commit, /simplify, etc.)</span>
+                <span class="ref-chevron">&#9654;</span>
+              </div>
+              <div class="ref-card-body">
+                <h4>Description</h4>
+                <p>Executes a registered skill (slash command) within the conversation. See the Skills tab for the full list.</p>
+                <h4>Parameters</h4>
+                <table class="ref-params"><tr><th>Name</th><th>Type</th><th>Req</th><th>Description</th></tr>
+                  <tr><td class="rp-name">skill</td><td class="rp-type">string</td><td class="rp-req">req</td><td>Skill name, e.g. <code>"simplify"</code></td></tr>
+                  <tr><td class="rp-name">args</td><td class="rp-type">string</td><td class="rp-opt">opt</td><td>Arguments for the skill</td></tr>
+                </table>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- Web -->
+        <div class="ref-category" data-cat="web">
+          <div class="ref-category-title">Web</div>
+          <div class="ref-grid">
+
+            <div class="ref-card">
+              <div class="ref-card-header" onclick="toggleRef(this)">
+                <span><span class="ref-name">WebSearch</span> <span class="ref-tag tag-wb">web</span></span>
+                <span class="ref-brief">Search the web for current information</span>
+                <span class="ref-chevron">&#9654;</span>
+              </div>
+              <div class="ref-card-body">
+                <h4>Description</h4>
+                <p>Searches the web, returns results with markdown hyperlinks. Domain filtering supported.</p>
+                <h4>Parameters</h4>
+                <table class="ref-params"><tr><th>Name</th><th>Type</th><th>Req</th><th>Description</th></tr>
+                  <tr><td class="rp-name">query</td><td class="rp-type">string</td><td class="rp-req">req</td><td>Search query (min 2 chars)</td></tr>
+                  <tr><td class="rp-name">allowed_domains</td><td class="rp-type">string[]</td><td class="rp-opt">opt</td><td>Only include these domains</td></tr>
+                  <tr><td class="rp-name">blocked_domains</td><td class="rp-type">string[]</td><td class="rp-opt">opt</td><td>Exclude these domains</td></tr>
+                </table>
+              </div>
+            </div>
+
+            <div class="ref-card">
+              <div class="ref-card-header" onclick="toggleRef(this)">
+                <span><span class="ref-name">WebFetch</span> <span class="ref-tag tag-wb">web</span></span>
+                <span class="ref-brief">Fetch and process content from a URL</span>
+                <span class="ref-chevron">&#9654;</span>
+              </div>
+              <div class="ref-card-body">
+                <h4>Description</h4>
+                <p>Fetches URL content, converts HTML to markdown, processes with a prompt. 15-minute cache. Fails for authenticated/private URLs.</p>
+                <h4>Parameters</h4>
+                <table class="ref-params"><tr><th>Name</th><th>Type</th><th>Req</th><th>Description</th></tr>
+                  <tr><td class="rp-name">url</td><td class="rp-type">string (URI)</td><td class="rp-req">req</td><td>Fully-formed URL (HTTP auto-upgraded to HTTPS)</td></tr>
+                  <tr><td class="rp-name">prompt</td><td class="rp-type">string</td><td class="rp-req">req</td><td>What to extract from the page</td></tr>
+                </table>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- Tasks -->
+        <div class="ref-category" data-cat="task">
+          <div class="ref-category-title">Task Management</div>
+          <div class="ref-grid">
+
+            <div class="ref-card">
+              <div class="ref-card-header" onclick="toggleRef(this)">
+                <span><span class="ref-name">TaskCreate</span> <span class="ref-tag tag-mt">meta</span></span>
+                <span class="ref-brief">Create a structured task/todo item</span>
+                <span class="ref-chevron">&#9654;</span>
+              </div>
+              <div class="ref-card-body">
+                <h4>Parameters</h4>
+                <table class="ref-params"><tr><th>Name</th><th>Type</th><th>Req</th><th>Description</th></tr>
+                  <tr><td class="rp-name">subject</td><td class="rp-type">string</td><td class="rp-req">req</td><td>Brief, actionable title</td></tr>
+                  <tr><td class="rp-name">description</td><td class="rp-type">string</td><td class="rp-req">req</td><td>Detailed description</td></tr>
+                  <tr><td class="rp-name">activeForm</td><td class="rp-type">string</td><td class="rp-opt">opt</td><td>Spinner text, e.g. <code>"Running tests"</code></td></tr>
+                  <tr><td class="rp-name">metadata</td><td class="rp-type">object</td><td class="rp-opt">opt</td><td>Arbitrary metadata</td></tr>
+                </table>
+              </div>
+            </div>
+
+            <div class="ref-card">
+              <div class="ref-card-header" onclick="toggleRef(this)">
+                <span><span class="ref-name">TaskGet</span> <span class="ref-tag tag-ro">read-only</span></span>
+                <span class="ref-brief">Retrieve full details of a task by ID</span>
+                <span class="ref-chevron">&#9654;</span>
+              </div>
+              <div class="ref-card-body">
+                <h4>Parameters</h4>
+                <table class="ref-params"><tr><th>Name</th><th>Type</th><th>Req</th><th>Description</th></tr>
+                  <tr><td class="rp-name">taskId</td><td class="rp-type">string</td><td class="rp-req">req</td><td>The task ID to retrieve</td></tr>
+                </table>
+              </div>
+            </div>
+
+            <div class="ref-card">
+              <div class="ref-card-header" onclick="toggleRef(this)">
+                <span><span class="ref-name">TaskList</span> <span class="ref-tag tag-ro">read-only</span></span>
+                <span class="ref-brief">List all tasks in the session</span>
+                <span class="ref-chevron">&#9654;</span>
+              </div>
+              <div class="ref-card-body">
+                <p>Returns summary of every task: id, subject, status, owner, blockedBy. No parameters.</p>
+              </div>
+            </div>
+
+            <div class="ref-card">
+              <div class="ref-card-header" onclick="toggleRef(this)">
+                <span><span class="ref-name">TaskUpdate</span> <span class="ref-tag tag-wr">write</span></span>
+                <span class="ref-brief">Update status, details, or dependencies of a task</span>
+                <span class="ref-chevron">&#9654;</span>
+              </div>
+              <div class="ref-card-body">
+                <h4>Parameters</h4>
+                <table class="ref-params"><tr><th>Name</th><th>Type</th><th>Req</th><th>Description</th></tr>
+                  <tr><td class="rp-name">taskId</td><td class="rp-type">string</td><td class="rp-req">req</td><td>Task ID to update</td></tr>
+                  <tr><td class="rp-name">status</td><td class="rp-type">string</td><td class="rp-opt">opt</td><td><code>"pending"</code>, <code>"in_progress"</code>, <code>"completed"</code>, <code>"deleted"</code></td></tr>
+                  <tr><td class="rp-name">subject</td><td class="rp-type">string</td><td class="rp-opt">opt</td><td>New title</td></tr>
+                  <tr><td class="rp-name">description</td><td class="rp-type">string</td><td class="rp-opt">opt</td><td>New description</td></tr>
+                  <tr><td class="rp-name">owner</td><td class="rp-type">string</td><td class="rp-opt">opt</td><td>Agent name to assign</td></tr>
+                  <tr><td class="rp-name">addBlocks</td><td class="rp-type">string[]</td><td class="rp-opt">opt</td><td>Tasks this blocks</td></tr>
+                  <tr><td class="rp-name">addBlockedBy</td><td class="rp-type">string[]</td><td class="rp-opt">opt</td><td>Tasks that must complete first</td></tr>
+                </table>
+              </div>
+            </div>
+
+            <div class="ref-card">
+              <div class="ref-card-header" onclick="toggleRef(this)">
+                <span><span class="ref-name">TaskOutput</span> <span class="ref-tag tag-ro">read-only</span></span>
+                <span class="ref-brief">Retrieve output from a background task</span>
+                <span class="ref-chevron">&#9654;</span>
+              </div>
+              <div class="ref-card-body">
+                <p>Retrieves output from a background task. Deprecated &mdash; prefer reading the task's output file directly.</p>
+                <h4>Parameters</h4>
+                <table class="ref-params"><tr><th>Name</th><th>Type</th><th>Req</th><th>Description</th></tr>
+                  <tr><td class="rp-name">task_id</td><td class="rp-type">string</td><td class="rp-req">req</td><td>Background task ID</td></tr>
+                  <tr><td class="rp-name">block</td><td class="rp-type">boolean</td><td class="rp-req">req</td><td>Wait for completion?</td></tr>
+                  <tr><td class="rp-name">timeout</td><td class="rp-type">number</td><td class="rp-req">req</td><td>Max wait ms (max 600000)</td></tr>
+                </table>
+              </div>
+            </div>
+
+            <div class="ref-card">
+              <div class="ref-card-header" onclick="toggleRef(this)">
+                <span><span class="ref-name">TaskStop</span> <span class="ref-tag tag-ex">exec</span></span>
+                <span class="ref-brief">Stop a running background task</span>
+                <span class="ref-chevron">&#9654;</span>
+              </div>
+              <div class="ref-card-body">
+                <h4>Parameters</h4>
+                <table class="ref-params"><tr><th>Name</th><th>Type</th><th>Req</th><th>Description</th></tr>
+                  <tr><td class="rp-name">task_id</td><td class="rp-type">string</td><td class="rp-opt">opt</td><td>Background task ID to stop</td></tr>
+                </table>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- Workflow -->
+        <div class="ref-category" data-cat="workflow">
+          <div class="ref-category-title">Planning &amp; Workflow</div>
+          <div class="ref-grid">
+
+            <div class="ref-card">
+              <div class="ref-card-header" onclick="toggleRef(this)">
+                <span><span class="ref-name">EnterPlanMode</span> <span class="ref-tag tag-mt">meta</span></span>
+                <span class="ref-brief">Enter planning mode to design an implementation approach</span>
+                <span class="ref-chevron">&#9654;</span>
+              </div>
+              <div class="ref-card-body">
+                <p>Transitions into plan mode for non-trivial tasks. Explores codebase, designs approach, presents for approval. No parameters.</p>
+                <h4>When to Use</h4>
+                <ul><li>New features</li><li>Multiple valid approaches</li><li>Architectural decisions</li><li>Multi-file changes</li></ul>
+              </div>
+            </div>
+
+            <div class="ref-card">
+              <div class="ref-card-header" onclick="toggleRef(this)">
+                <span><span class="ref-name">ExitPlanMode</span> <span class="ref-tag tag-mt">meta</span></span>
+                <span class="ref-brief">Present plan for approval and begin implementation</span>
+                <span class="ref-chevron">&#9654;</span>
+              </div>
+              <div class="ref-card-body">
+                <h4>Parameters</h4>
+                <table class="ref-params"><tr><th>Name</th><th>Type</th><th>Req</th><th>Description</th></tr>
+                  <tr><td class="rp-name">allowedPrompts</td><td class="rp-type">array</td><td class="rp-opt">opt</td><td>Bash permissions needed, e.g. <code>"run tests"</code></td></tr>
+                </table>
+              </div>
+            </div>
+
+            <div class="ref-card">
+              <div class="ref-card-header" onclick="toggleRef(this)">
+                <span><span class="ref-name">EnterWorktree</span> <span class="ref-tag tag-ex">exec</span></span>
+                <span class="ref-brief">Create an isolated git worktree for the session</span>
+                <span class="ref-chevron">&#9654;</span>
+              </div>
+              <div class="ref-card-body">
+                <p>Creates a git worktree in <code>.claude/worktrees/</code> with a new branch from HEAD. Only when user explicitly asks.</p>
+                <h4>Parameters</h4>
+                <table class="ref-params"><tr><th>Name</th><th>Type</th><th>Req</th><th>Description</th></tr>
+                  <tr><td class="rp-name">name</td><td class="rp-type">string</td><td class="rp-opt">opt</td><td>Worktree name (max 64 chars). Random if omitted.</td></tr>
+                </table>
+              </div>
+            </div>
+
+            <div class="ref-card">
+              <div class="ref-card-header" onclick="toggleRef(this)">
+                <span><span class="ref-name">ExitWorktree</span> <span class="ref-tag tag-ex">exec</span></span>
+                <span class="ref-brief">Leave the worktree and return to original directory</span>
+                <span class="ref-chevron">&#9654;</span>
+              </div>
+              <div class="ref-card-body">
+                <h4>Parameters</h4>
+                <table class="ref-params"><tr><th>Name</th><th>Type</th><th>Req</th><th>Description</th></tr>
+                  <tr><td class="rp-name">action</td><td class="rp-type">string</td><td class="rp-req">req</td><td><code>"keep"</code> or <code>"remove"</code></td></tr>
+                  <tr><td class="rp-name">discard_changes</td><td class="rp-type">boolean</td><td class="rp-opt">opt</td><td>Required true with remove if uncommitted changes</td></tr>
+                </table>
+              </div>
+            </div>
+
+            <div class="ref-card">
+              <div class="ref-card-header" onclick="toggleRef(this)">
+                <span><span class="ref-name">AskUserQuestion</span> <span class="ref-tag tag-mt">meta</span></span>
+                <span class="ref-brief">Ask structured questions with selectable options</span>
+                <span class="ref-chevron">&#9654;</span>
+              </div>
+              <div class="ref-card-body">
+                <p>Presents 1-4 questions with 2-4 options each. Users can always select "Other". Supports multi-select and preview content.</p>
+                <h4>Parameters</h4>
+                <table class="ref-params"><tr><th>Name</th><th>Type</th><th>Req</th><th>Description</th></tr>
+                  <tr><td class="rp-name">questions</td><td class="rp-type">array (1-4)</td><td class="rp-req">req</td><td>Each: <code>question</code>, <code>header</code> (max 12 chars), <code>options</code> (2-4), <code>multiSelect</code></td></tr>
+                </table>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- Scheduling -->
+        <div class="ref-category" data-cat="schedule">
+          <div class="ref-category-title">Scheduling</div>
+          <div class="ref-grid">
+
+            <div class="ref-card">
+              <div class="ref-card-header" onclick="toggleRef(this)">
+                <span><span class="ref-name">CronCreate</span> <span class="ref-tag tag-ex">exec</span></span>
+                <span class="ref-brief">Schedule a recurring or one-shot prompt on a cron schedule</span>
+                <span class="ref-chevron">&#9654;</span>
+              </div>
+              <div class="ref-card-body">
+                <p>Schedules prompts via 5-field cron expressions (local timezone). Session-scoped, auto-expire after 7 days.</p>
+                <h4>Parameters</h4>
+                <table class="ref-params"><tr><th>Name</th><th>Type</th><th>Req</th><th>Description</th></tr>
+                  <tr><td class="rp-name">cron</td><td class="rp-type">string</td><td class="rp-req">req</td><td>5-field cron, e.g. <code>"*/5 * * * *"</code></td></tr>
+                  <tr><td class="rp-name">prompt</td><td class="rp-type">string</td><td class="rp-req">req</td><td>Prompt to enqueue</td></tr>
+                  <tr><td class="rp-name">recurring</td><td class="rp-type">boolean</td><td class="rp-opt">opt</td><td>Default true. false = one-shot</td></tr>
+                  <tr><td class="rp-name">durable</td><td class="rp-type">boolean</td><td class="rp-opt">opt</td><td>Persist to disk / survive restarts</td></tr>
+                </table>
+              </div>
+            </div>
+
+            <div class="ref-card">
+              <div class="ref-card-header" onclick="toggleRef(this)">
+                <span><span class="ref-name">CronDelete</span> <span class="ref-tag tag-ex">exec</span></span>
+                <span class="ref-brief">Cancel a scheduled cron job</span>
+                <span class="ref-chevron">&#9654;</span>
+              </div>
+              <div class="ref-card-body">
+                <h4>Parameters</h4>
+                <table class="ref-params"><tr><th>Name</th><th>Type</th><th>Req</th><th>Description</th></tr>
+                  <tr><td class="rp-name">id</td><td class="rp-type">string</td><td class="rp-req">req</td><td>Job ID from CronCreate</td></tr>
+                </table>
+              </div>
+            </div>
+
+            <div class="ref-card">
+              <div class="ref-card-header" onclick="toggleRef(this)">
+                <span><span class="ref-name">CronList</span> <span class="ref-tag tag-ro">read-only</span></span>
+                <span class="ref-brief">List all scheduled cron jobs in the session</span>
+                <span class="ref-chevron">&#9654;</span>
+              </div>
+              <div class="ref-card-body">
+                <p>Returns all cron jobs in the current session. No parameters.</p>
+              </div>
+            </div>
+
+            <div class="ref-card">
+              <div class="ref-card-header" onclick="toggleRef(this)">
+                <span><span class="ref-name">RemoteTrigger</span> <span class="ref-tag tag-wb">web</span></span>
+                <span class="ref-brief">Manage scheduled remote agents via the claude.ai API</span>
+                <span class="ref-chevron">&#9654;</span>
+              </div>
+              <div class="ref-card-body">
+                <p>Calls the claude.ai remote-trigger API. OAuth token added automatically.</p>
+                <h4>Parameters</h4>
+                <table class="ref-params"><tr><th>Name</th><th>Type</th><th>Req</th><th>Description</th></tr>
+                  <tr><td class="rp-name">action</td><td class="rp-type">string</td><td class="rp-req">req</td><td><code>"list"</code>, <code>"get"</code>, <code>"create"</code>, <code>"update"</code>, <code>"run"</code></td></tr>
+                  <tr><td class="rp-name">trigger_id</td><td class="rp-type">string</td><td class="rp-opt">opt</td><td>Required for get/update/run</td></tr>
+                  <tr><td class="rp-name">body</td><td class="rp-type">object</td><td class="rp-opt">opt</td><td>JSON body for create/update</td></tr>
+                </table>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+      </div><!-- /ref-tools -->
+
+      <!-- ===================== SKILLS ===================== -->
+      <div class="ref-panel" id="ref-skills">
+
+        <div class="ref-intro">
+          <strong>Skills</strong> are specialized prompts invoked via slash commands (e.g. <code>/simplify</code>) or triggered automatically when the context matches. They are executed through the <code>Skill</code> tool and expand into full, domain-specific prompts.
+        </div>
+
+        <div class="ref-grid">
+
+          <div class="ref-card">
+            <div class="ref-card-header" onclick="toggleRef(this)">
+              <span><span class="ref-name">/update-config</span> <span class="ref-tag tag-sk">skill</span></span>
+              <span class="ref-brief">Configure settings, hooks, permissions, and env vars</span>
+              <span class="ref-chevron">&#9654;</span>
+            </div>
+            <div class="ref-card-body">
+              <h4>Description</h4>
+              <p>Configures the Claude Code harness via <code>settings.json</code>. The go-to skill for hooks, permissions, env vars, and settings file modifications.</p>
+              <h4>When Triggered</h4>
+              <ul>
+                <li>"from now on when X", "each time X", "whenever X", "before/after X"</li>
+                <li>"allow npm commands", "add bq permission", "move permission to user settings"</li>
+                <li>"set DEBUG=true"</li>
+                <li>Hook troubleshooting and settings.json changes</li>
+              </ul>
+              <h4>Key Detail</h4>
+              <p>Automated behaviors require <strong>hooks</strong> in settings.json &mdash; the harness executes these, not Claude's memory.</p>
+            </div>
+          </div>
+
+          <div class="ref-card">
+            <div class="ref-card-header" onclick="toggleRef(this)">
+              <span><span class="ref-name">/keybindings-help</span> <span class="ref-tag tag-sk">skill</span></span>
+              <span class="ref-brief">Customize keyboard shortcuts and keybindings</span>
+              <span class="ref-chevron">&#9654;</span>
+            </div>
+            <div class="ref-card-body">
+              <h4>Description</h4>
+              <p>Manages <code>~/.claude/keybindings.json</code>. Supports rebinding keys, chord (multi-key) shortcuts, and modifying existing bindings.</p>
+              <h4>When Triggered</h4>
+              <ul><li>"rebind ctrl+s"</li><li>"add a chord shortcut"</li><li>"change the submit key"</li><li>"customize keybindings"</li></ul>
+            </div>
+          </div>
+
+          <div class="ref-card">
+            <div class="ref-card-header" onclick="toggleRef(this)">
+              <span><span class="ref-name">/simplify</span> <span class="ref-tag tag-sk">skill</span></span>
+              <span class="ref-brief">Review changed code for reuse, quality, and efficiency</span>
+              <span class="ref-chevron">&#9654;</span>
+            </div>
+            <div class="ref-card-body">
+              <h4>Description</h4>
+              <p>Reviews recently changed code. Checks for reuse opportunities, quality issues, and efficiency concerns. Auto-applies fixes.</p>
+              <h4>What It Checks</h4>
+              <ul>
+                <li><strong>Reuse</strong> &mdash; Existing utilities the new code could leverage</li>
+                <li><strong>Quality</strong> &mdash; Conventions, anti-patterns, dead code, complexity</li>
+                <li><strong>Efficiency</strong> &mdash; Performance, redundant ops, unnecessary allocations</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="ref-card">
+            <div class="ref-card-header" onclick="toggleRef(this)">
+              <span><span class="ref-name">/loop</span> <span class="ref-tag tag-sk">skill</span></span>
+              <span class="ref-brief">Run a prompt or slash command on a recurring interval</span>
+              <span class="ref-chevron">&#9654;</span>
+            </div>
+            <div class="ref-card-body">
+              <h4>Description</h4>
+              <p>Sets up recurring execution of a prompt or command. Default interval: 10m.</p>
+              <h4>Syntax</h4>
+              <pre class="ref-pre">/loop [interval] [command or prompt]</pre>
+              <h4>Examples</h4>
+              <pre class="ref-pre">/loop 5m check if CI passed
+/loop 10m /simplify
+/loop 30s check build status</pre>
+              <p>For <strong>recurring</strong> tasks only. Do not invoke for one-offs.</p>
+            </div>
+          </div>
+
+          <div class="ref-card">
+            <div class="ref-card-header" onclick="toggleRef(this)">
+              <span><span class="ref-name">/schedule</span> <span class="ref-tag tag-sk">skill</span></span>
+              <span class="ref-brief">Manage scheduled remote agents (triggers) on a cron schedule</span>
+              <span class="ref-chevron">&#9654;</span>
+            </div>
+            <div class="ref-card-body">
+              <h4>Description</h4>
+              <p>Creates, updates, lists, or runs remote triggers via the claude.ai API. Unlike <code>/loop</code> (session-scoped), these persist across sessions.</p>
+              <h4>Capabilities</h4>
+              <ul>
+                <li><strong>Create</strong> &mdash; New trigger with cron schedule and prompt</li>
+                <li><strong>List</strong> &mdash; View all triggers</li>
+                <li><strong>Update</strong> &mdash; Modify schedule or prompt</li>
+                <li><strong>Run</strong> &mdash; Execute immediately</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="ref-card">
+            <div class="ref-card-header" onclick="toggleRef(this)">
+              <span><span class="ref-name">/claude-api</span> <span class="ref-tag tag-sk">skill</span></span>
+              <span class="ref-brief">Build apps with the Claude API, Anthropic SDK, or Agent SDK</span>
+              <span class="ref-chevron">&#9654;</span>
+            </div>
+            <div class="ref-card-body">
+              <h4>Description</h4>
+              <p>Specialized guidance for Claude API, Anthropic SDKs, and Agent SDK integration. Covers tool use, streaming, and SDK best practices.</p>
+              <h4>When Triggered</h4>
+              <ul>
+                <li>Imports <code>anthropic</code>, <code>@anthropic-ai/sdk</code>, or <code>claude_agent_sdk</code></li>
+                <li>User asks about Claude API or Anthropic SDKs</li>
+              </ul>
+              <h4>NOT Triggered For</h4>
+              <ul><li>Other AI SDKs (openai, etc.)</li><li>General programming / ML tasks</li></ul>
+            </div>
+          </div>
+
+        </div>
+      </div><!-- /ref-skills -->
+
+      <!-- ===================== HOOKS ===================== -->
+      <div class="ref-panel" id="ref-hooks">
+
+        <div class="ref-intro">
+          <strong>Hooks</strong> are user-configured shell commands that execute automatically in response to Claude Code lifecycle events.
+          Defined in <code>settings.json</code> (project, user, or global scope), they are run by the harness &mdash; not by Claude.
+          Use <code>/update-config</code> to set them up.
+        </div>
+
+        <!-- Lifecycle -->
+        <div class="ref-lifecycle">
+          <span class="ref-lc-step active">PreToolUse</span>
+          <span class="ref-lc-arrow">&#8594;</span>
+          <span class="ref-lc-step">Tool Executes</span>
+          <span class="ref-lc-arrow">&#8594;</span>
+          <span class="ref-lc-step active">PostToolUse</span>
+          <span class="ref-lc-arrow">&#8594;</span>
+          <span class="ref-lc-step">Claude Responds</span>
+          <span class="ref-lc-arrow">&#8594;</span>
+          <span class="ref-lc-step active">Stop</span>
+        </div>
+        <div class="ref-lifecycle" style="margin-top:6px">
+          <span class="ref-lc-step active">Notification</span>
+          <span class="ref-lc-arrow">&mdash;</span>
+          <span class="ref-lc-step">Fires on notification events</span>
+          <span style="width:2rem"></span>
+          <span class="ref-lc-step active">SubagentStop</span>
+          <span class="ref-lc-arrow">&mdash;</span>
+          <span class="ref-lc-step">Fires when sub-agent completes</span>
+        </div>
+
+        <div class="ref-grid" style="margin-top:1.5rem">
+
+          <div class="ref-card">
+            <div class="ref-card-header" onclick="toggleRef(this)">
+              <span><span class="ref-name">PreToolUse</span> <span class="ref-tag tag-hk">hook</span></span>
+              <span class="ref-brief">Runs before a tool executes &mdash; can block or modify</span>
+              <span class="ref-chevron">&#9654;</span>
+            </div>
+            <div class="ref-card-body">
+              <h4>Description</h4>
+              <p>Fires before any tool call. Can approve, block, or modify it based on exit code and stdout.</p>
+              <h4>Environment Variables</h4>
+              <table class="ref-params"><tr><th>Variable</th><th>Description</th></tr>
+                <tr><td class="rp-name">CLAUDE_TOOL_NAME</td><td>Tool name (e.g. <code>Bash</code>, <code>Write</code>)</td></tr>
+                <tr><td class="rp-name">CLAUDE_TOOL_INPUT</td><td>JSON string of tool input</td></tr>
+                <tr><td class="rp-name">CLAUDE_SESSION_ID</td><td>Session identifier</td></tr>
+              </table>
+              <h4>Exit Codes</h4>
+              <ul>
+                <li><code>0</code> &mdash; Allow (stdout shown to Claude as context)</li>
+                <li><code>2</code> &mdash; Block (stdout is the reason)</li>
+                <li>Other &mdash; Hook error; tool proceeds with warning</li>
+              </ul>
+              <h4>Use Cases</h4>
+              <ul><li>Prevent writes to protected files</li><li>Enforce naming conventions</li><li>Gate destructive Bash commands</li><li>Audit logging</li></ul>
+            </div>
+          </div>
+
+          <div class="ref-card">
+            <div class="ref-card-header" onclick="toggleRef(this)">
+              <span><span class="ref-name">PostToolUse</span> <span class="ref-tag tag-hk">hook</span></span>
+              <span class="ref-brief">Runs after a tool completes &mdash; react to results</span>
+              <span class="ref-chevron">&#9654;</span>
+            </div>
+            <div class="ref-card-body">
+              <h4>Description</h4>
+              <p>Fires after tool completion. Stdout is injected as additional context for Claude.</p>
+              <h4>Environment Variables</h4>
+              <table class="ref-params"><tr><th>Variable</th><th>Description</th></tr>
+                <tr><td class="rp-name">CLAUDE_TOOL_NAME</td><td>Tool that was called</td></tr>
+                <tr><td class="rp-name">CLAUDE_TOOL_INPUT</td><td>JSON input</td></tr>
+                <tr><td class="rp-name">CLAUDE_TOOL_OUTPUT</td><td>JSON output/result</td></tr>
+              </table>
+              <h4>Use Cases</h4>
+              <ul><li>Auto-lint after writes</li><li>Auto-test after edits</li><li>Compliance logging</li><li>Validate code against standards</li></ul>
+            </div>
+          </div>
+
+          <div class="ref-card">
+            <div class="ref-card-header" onclick="toggleRef(this)">
+              <span><span class="ref-name">Notification</span> <span class="ref-tag tag-hk">hook</span></span>
+              <span class="ref-brief">Runs when a notification event fires</span>
+              <span class="ref-chevron">&#9654;</span>
+            </div>
+            <div class="ref-card-body">
+              <h4>Description</h4>
+              <p>Fires on notification events. Route to Slack, desktop alerts, sound, or custom channels.</p>
+              <h4>Environment Variables</h4>
+              <table class="ref-params"><tr><th>Variable</th><th>Description</th></tr>
+                <tr><td class="rp-name">CLAUDE_NOTIFICATION_MESSAGE</td><td>Notification content</td></tr>
+              </table>
+              <h4>Use Cases</h4>
+              <ul><li>Slack messages</li><li>Desktop notifications via <code>notify-send</code></li><li>Custom sound alerts</li></ul>
+            </div>
+          </div>
+
+          <div class="ref-card">
+            <div class="ref-card-header" onclick="toggleRef(this)">
+              <span><span class="ref-name">Stop</span> <span class="ref-tag tag-hk">hook</span></span>
+              <span class="ref-brief">Runs when Claude finishes responding &mdash; post-turn actions</span>
+              <span class="ref-chevron">&#9654;</span>
+            </div>
+            <div class="ref-card-body">
+              <h4>Description</h4>
+              <p>Fires when Claude completes a turn. Stdout is fed back as a prompt &mdash; if it produces output, Claude processes another turn.</p>
+              <h4>Environment Variables</h4>
+              <table class="ref-params"><tr><th>Variable</th><th>Description</th></tr>
+                <tr><td class="rp-name">CLAUDE_STOP_REASON</td><td>e.g. <code>end_turn</code>, <code>max_tokens</code></td></tr>
+              </table>
+              <h4>Use Cases</h4>
+              <ul><li>Auto-run tests after coding</li><li>Change summaries</li><li>Trigger builds</li><li>Chain follow-up prompts</li></ul>
+            </div>
+          </div>
+
+          <div class="ref-card">
+            <div class="ref-card-header" onclick="toggleRef(this)">
+              <span><span class="ref-name">SubagentStop</span> <span class="ref-tag tag-hk">hook</span></span>
+              <span class="ref-brief">Runs when a sub-agent finishes its task</span>
+              <span class="ref-chevron">&#9654;</span>
+            </div>
+            <div class="ref-card-body">
+              <h4>Description</h4>
+              <p>Fires when a sub-agent completes. Like Stop but scoped to sub-agents.</p>
+              <h4>Use Cases</h4>
+              <ul><li>Validate sub-agent output</li><li>Log completions</li><li>Inject additional instructions</li><li>Quality gates</li></ul>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Config reference -->
+        <div class="ref-category-title" style="margin-top:2rem">Configuration Reference</div>
+        <div class="ref-intro">
+          Hooks live in <code>settings.json</code> at three scopes:
+          <strong>Project</strong> (<code>.claude/settings.json</code> or <code>.claude/settings.local.json</code>),
+          <strong>User</strong> (<code>~/.claude/settings.json</code>),
+          <strong>Global</strong> (<code>~/.claude/settings.global.json</code>).
+        </div>
+        <div class="ref-card">
+          <div class="ref-card-header" onclick="toggleRef(this)">
+            <span><span class="ref-name">Hook Object Schema</span> <span class="ref-tag tag-hk">config</span></span>
+            <span class="ref-brief">Structure of a hook entry in settings.json</span>
+            <span class="ref-chevron">&#9654;</span>
+          </div>
+          <div class="ref-card-body">
+            <pre class="ref-pre">{
+  "hooks": {
+    "&lt;HookType&gt;": [
+      {
+        "matcher": "&lt;ToolName&gt;",   // optional: filter by tool
+        "command": "&lt;shell cmd&gt;",   // required
+        "timeout": 10000            // optional: ms
+      }
+    ]
+  }
+}</pre>
+            <h4>Fields</h4>
+            <table class="ref-params"><tr><th>Field</th><th>Type</th><th>Req</th><th>Description</th></tr>
+              <tr><td class="rp-name">matcher</td><td class="rp-type">string</td><td class="rp-opt">opt</td><td>Tool name filter (PreToolUse/PostToolUse only). Omit for all tools.</td></tr>
+              <tr><td class="rp-name">command</td><td class="rp-type">string</td><td class="rp-req">req</td><td>Shell command to execute</td></tr>
+              <tr><td class="rp-name">timeout</td><td class="rp-type">number</td><td class="rp-opt">opt</td><td>Timeout in milliseconds</td></tr>
+            </table>
+          </div>
+        </div>
+
+      </div><!-- /ref-hooks -->
+
+    </div><!-- /ref-container -->
+  </div><!-- /view-reference -->
+
+  <footer>
+    <span id="stats">0 requests</span>
+  </footer>
+  <script src="app.js"></script>
+</body>
+</html>
