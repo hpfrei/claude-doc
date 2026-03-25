@@ -1,12 +1,18 @@
 # claude-doc
 
-A transparent API proxy and web dashboard for studying Claude Code CLI interactions with the Anthropic API.
+Inspect every Anthropic API call in real time. Run interactive Claude Code sessions from any browser.
 
-I built this to understand exactly what happens in the wire protocol between Claude Code and the Anthropic API — every request, every SSE event, every tool call. It started as a simple logging proxy and evolved into a full web interface for running Claude Code CLI sessions on a remote machine from a browser.
+**claude-doc** is two things in one:
 
-## What it does
+1. **An Anthropic API inspector** — a transparent proxy that captures every request, response, SSE event, tool call, and token count flowing between Claude Code and the Anthropic API. See exactly what the wire protocol looks like, in real time, with full payloads you can drill into.
 
-**claude-doc** sits between Claude Code and the Anthropic API, captures every exchange, and presents it in a real-time web dashboard.
+2. **A web-based Claude Code terminal** — send prompts from any browser, get streamed responses, answer interactive questions, and maintain full conversation context — all against a remote machine where Claude Code is running. No SSH, no terminal, just a browser.
+
+I built this to study how Claude Code actually talks to the Anthropic API — what gets sent in each request, how the system prompt is structured, how tool calls stream back, what the token usage looks like. It evolved into my daily tool for running Claude Code on a remote PC from a phone or tablet.
+
+## Features
+
+### API Inspector
 
 ```
 Browser  --->  Dashboard (:3457)  <--- WebSocket --->  Proxy (:3456)  --->  Anthropic API
@@ -15,19 +21,22 @@ Browser  --->  Dashboard (:3457)  <--- WebSocket --->  Proxy (:3456)  --->  Anth
                                                     Claude Code CLI
 ```
 
-### Proxy (port 3456)
+- **Full request/response capture** — every `/v1/messages` and `/v1/messages/count_tokens` call, with headers, payloads, and timing
+- **Live SSE event stream** — watch individual server-sent events as they arrive: `message_start`, `content_block_delta`, `message_stop`, and everything in between
+- **Tool call extraction** — tool uses are parsed from streaming content blocks and displayed in a hierarchical timeline (turn > tool calls)
+- **Token usage tracking** — input, output, cache read, and cache creation tokens per interaction
+- **Busy indicator** — the Inspector tab pulses when requests are in-flight, so you know something is happening even when viewing another tab
+- **Interaction persistence** — every exchange is saved as JSON to `interactions/<session>/<seq>.json` for offline analysis
+- **Transparent proxy** — Claude Code sees no difference; just set `ANTHROPIC_BASE_URL` and everything flows through
 
-- Forwards all `/v1/messages` and `/v1/messages/count_tokens` requests to the Anthropic API
-- Passes through SSE streaming transparently — Claude Code sees no difference
-- Records every request/response pair with timing, token usage, and full SSE event streams
-- Intercepts `AskUserQuestion` tool calls so they can be answered from the dashboard
-- Binds to `127.0.0.1` only — never exposed to the network
+### Interactive Claude Code
 
-### Dashboard (port 3457)
-
-- **Inspector** — Timeline of every API call with a busy indicator (pulsing dot on the tab when requests are in-flight). Select any interaction to see the full request payload, response, individual SSE events, and extracted tool calls
-- **Claude** — Run Claude Code CLI sessions directly from the browser. Conversation context is maintained across prompts using `--resume` — each follow-up prompt continues the same session. Includes a settings panel (gear icon) to configure the project root directory. This is how I use it to operate Claude Code on a remote PC from any device
-- **Reference** — Built-in reference for Claude Code's tool schemas
+- **Browser-based prompting** — send prompts to Claude Code CLI from any device, no terminal needed
+- **Streamed responses** — output appears in real time as Claude thinks, writes code, and uses tools
+- **Persistent conversations** — session context is maintained across prompts using `--resume`, so follow-up questions work naturally. Clear History starts a fresh session
+- **AskUserQuestion interception** — when Claude Code asks a question (tool selection, confirmations, clarifications), the question appears in the browser and your answer is injected back into the conversation
+- **Remote project access** — configure the working directory via the settings panel (gear icon) to point Claude at any project on the machine
+- **Process control** — stop a running session at any time
 
 ### Themes
 
@@ -83,13 +92,15 @@ This starts two servers:
 | Proxy     | 3456 | API proxy for Claude Code (localhost only) |
 | Dashboard | 3457 | Web interface (auth required)  |
 
-### Point Claude Code at the proxy
+### Use it
+
+**Inspect API calls** — point any Claude Code session at the proxy and watch the traffic:
 
 ```bash
 ANTHROPIC_BASE_URL=http://localhost:3456 claude -p "your prompt"
 ```
 
-Or open `http://localhost:3457`, log in with the auth token, and use the Claude tab to send prompts directly from the browser.
+**Run Claude Code from the browser** — open `http://localhost:3457`, log in with the auth token, and use the Claude tab. Full conversation context, streamed output, interactive question answering — all from any device with a browser.
 
 ### Authentication
 
@@ -126,15 +137,17 @@ The Claude tab includes a settings panel (gear icon) where you can set the worki
 
 ## How it works
 
+The proxy is fully transparent — it adds zero latency overhead to the SSE stream. Claude Code doesn't know it's there.
+
 1. Claude Code sends a request to the proxy instead of directly to Anthropic
-2. The proxy forwards the request upstream and streams the response back
-3. An `SSEPassthrough` transform stream taps into the response without buffering — raw bytes flow to Claude Code while parsed events are sent to the dashboard over WebSocket
-4. Each interaction (request + response + all SSE events + timing) is saved to `interactions/<session>/<seq>.json`
-5. The dashboard renders everything in real time: tool calls are extracted from streaming content blocks, token usage is tracked, and timing data is displayed
+2. The proxy forwards it upstream and pipes the response back through an `SSEPassthrough` transform stream
+3. Raw bytes flow to Claude Code unmodified, while parsed SSE events are tapped off and sent to the dashboard over WebSocket — no buffering, no delay
+4. The dashboard renders everything in real time: each interaction appears in the timeline as it starts, tool calls are extracted from streaming content blocks as they arrive, and token counts update on completion
+5. Every exchange is persisted as structured JSON for offline analysis: `interactions/<session>/<seq>.json` contains the full request, response, all SSE events, timing, and usage data
 
 ### AskUserQuestion interception
 
-When Claude Code emits an `AskUserQuestion` tool call, the proxy holds the next request and broadcasts the question to the dashboard. You answer from the browser, and the proxy injects your response back into the conversation — enabling fully remote interactive sessions.
+When Claude Code emits an `AskUserQuestion` tool call, the proxy intercepts the next retry request and holds it. The question is broadcast to the dashboard where you can answer from the browser. Your response is injected back into the conversation seamlessly — Claude Code never knows the answer came from a web UI instead of a terminal.
 
 ## Project structure
 
