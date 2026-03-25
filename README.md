@@ -25,9 +25,16 @@ Browser  --->  Dashboard (:3457)  <--- WebSocket --->  Proxy (:3456)  --->  Anth
 
 ### Dashboard (port 3457)
 
-- **Inspector** — Timeline of every API call. Select any interaction to see the full request payload, response, individual SSE events, and extracted tool calls
-- **Claude** — Run Claude Code CLI sessions directly from the browser. Send prompts, see streamed output, stop running sessions. Includes a settings panel to configure the project root directory. This is how I use it to operate Claude Code on a remote PC from any device
+- **Inspector** — Timeline of every API call with a busy indicator (pulsing dot on the tab when requests are in-flight). Select any interaction to see the full request payload, response, individual SSE events, and extracted tool calls
+- **Claude** — Run Claude Code CLI sessions directly from the browser. Conversation context is maintained across prompts using `--resume` — each follow-up prompt continues the same session. Includes a settings panel (gear icon) to configure the project root directory. This is how I use it to operate Claude Code on a remote PC from any device
 - **Reference** — Built-in reference for Claude Code's tool schemas
+
+### Themes
+
+Two built-in themes with a toggle in the header (persisted to localStorage):
+
+- **dark** — Tokyo Night inspired dark theme (default)
+- **hpflabs** — Bright checker-paper look with a grid background
 
 ## Getting started
 
@@ -73,8 +80,8 @@ This starts two servers:
 
 | Server    | Port | Purpose                        |
 |-----------|------|--------------------------------|
-| Proxy     | 3456 | API proxy for Claude Code      |
-| Dashboard | 3457 | Web interface                  |
+| Proxy     | 3456 | API proxy for Claude Code (localhost only) |
+| Dashboard | 3457 | Web interface (auth required)  |
 
 ### Point Claude Code at the proxy
 
@@ -97,6 +104,10 @@ The token is entered once in the browser login page and stored as an HttpOnly co
 # Use a fixed token
 AUTH_TOKEN=mysecret npm start
 ```
+
+### Conversation sessions
+
+The Claude tab maintains conversation context across prompts. The session ID is captured from the first response, and subsequent prompts use `--resume` to continue the same conversation. Press **Clear History** to reset the session and start fresh.
 
 ### Project root
 
@@ -128,11 +139,11 @@ When Claude Code emits an `AskUserQuestion` tool call, the proxy holds the next 
 ## Project structure
 
 ```
-server.js              Main entry — starts proxy + dashboard servers
+server.js              Main entry — starts proxy + dashboard servers, auth middleware
 src/
   proxy.js             Express router, API forwarding, AskUserQuestion interception
   sse-passthrough.js   Transform stream that taps SSE events without buffering
-  claude-session.js    Spawns and manages claude -p subprocess
+  claude-session.js    Spawns and manages claude -p subprocess with session continuity
   dashboard-ws.js      WebSocket server, broadcasts events to connected dashboards
   store.js             In-memory interaction store with disk persistence
   utils.js             Header filtering, ID generation, payload sanitization
@@ -140,7 +151,9 @@ public/
   index.html           Dashboard UI (Inspector + Claude + Reference tabs)
   login.html           Auth token login page
   app.js               Client-side state management and rendering
-  style.css            Dashboard styles
+  style.css            Layout and structural styles
+  theme-dark.css       Dark theme (Tokyo Night)
+  theme-hpflabs.css    Bright checker-paper theme
   tools.html           Tool schema reference page
 ```
 
