@@ -33,7 +33,7 @@ Browser  --->  Dashboard (:3457)  <--- WebSocket --->  Proxy (:3456)  --->  Anth
 ### Prerequisites
 
 - Node.js 18+
-- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated
+- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed
 
 ### Install and run
 
@@ -41,6 +41,17 @@ Browser  --->  Dashboard (:3457)  <--- WebSocket --->  Proxy (:3456)  --->  Anth
 git clone https://github.com/hpfrei/claude-doc.git
 cd claude-doc
 npm install
+```
+
+Before starting the server, run `claude` once manually from the project directory to authenticate:
+
+```bash
+claude
+```
+
+This stores your credentials locally. The Claude tab in the dashboard spawns `claude -p` under the hood and reuses the same authentication — so this one-time setup is all that's needed.
+
+```bash
 npm start
 ```
 
