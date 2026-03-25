@@ -1,3 +1,18 @@
+// --- Theme toggle ---
+(function initTheme() {
+  const btn = document.getElementById('themeToggle');
+  const link = document.getElementById('themeLink');
+  let theme = localStorage.getItem('theme') || 'dark';
+  btn.textContent = theme;
+
+  btn.addEventListener('click', () => {
+    theme = theme === 'dark' ? 'hpflabs' : 'dark';
+    link.href = `theme-${theme}.css`;
+    localStorage.setItem('theme', theme);
+    btn.textContent = theme;
+  });
+})();
+
 // --- State ---
 const state = {
   interactions: [],
@@ -159,6 +174,7 @@ function handleMessage(msg) {
       state.interactions = msg.interactions || [];
       renderTimeline();
       updateStats();
+      updateInspectorBusy();
       if (state.interactions.length > 0) {
         select({ type: 'turn', id: state.interactions[state.interactions.length - 1].id });
       }
@@ -168,6 +184,7 @@ function handleMessage(msg) {
       state.interactions.push(msg.interaction);
       appendTurnToTimeline(msg.interaction);
       updateStats();
+      updateInspectorBusy();
       select({ type: 'turn', id: msg.interaction.id });
       scrollTimelineToBottom();
       break;
@@ -178,10 +195,12 @@ function handleMessage(msg) {
 
     case 'interaction:complete':
       updateInteraction(msg.interaction);
+      updateInspectorBusy();
       break;
 
     case 'interaction:error':
       markInteractionError(msg.interactionId, msg.error);
+      updateInspectorBusy();
       break;
 
     case 'cleared':
@@ -192,6 +211,7 @@ function handleMessage(msg) {
       detailContent.classList.add('hidden');
       emptyState.classList.remove('hidden');
       updateStats();
+      updateInspectorBusy();
       break;
 
     case 'chat:event':
@@ -526,6 +546,13 @@ function badgeClass(status) {
     case 'error': return 'badge-error';
     default: return 'badge-pending';
   }
+}
+
+function updateInspectorBusy() {
+  const tab = document.querySelector('[data-view="dashboard"]');
+  if (!tab) return;
+  const busy = state.interactions.some(i => i.status === 'pending' || i.status === 'streaming');
+  tab.classList.toggle('busy', busy);
 }
 
 function scrollTimelineToBottom() {
