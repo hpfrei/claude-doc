@@ -27,6 +27,7 @@ class DashboardBroadcaster {
           const msg = JSON.parse(data);
           if (msg.type === 'clear') {
             this.store.clear();
+            if (this.claudeSession) this.claudeSession.clearSession();
             this.broadcast({ type: 'cleared' });
           } else if (msg.type === 'chat:send' && this.claudeSession) {
             this.claudeSession.send(msg.prompt || '');

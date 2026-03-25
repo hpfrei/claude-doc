@@ -8,6 +8,7 @@ class ClaudeSession {
     this.proc = null;
     this.buffer = '';
     this.cwd = process.env.PROJECT_DIR || process.cwd();
+    this.sessionId = null;
   }
 
   get running() {
@@ -32,7 +33,12 @@ class ClaudeSession {
     this.buffer = '';
     this.broadcaster.broadcast({ type: 'chat:status', status: 'running' });
 
-    this.proc = spawn('claude', ['-p', '--verbose', '--output-format', 'stream-json'], {
+    const args = ['-p', '--verbose', '--output-format', 'stream-json'];
+    if (this.sessionId) {
+      args.push('--resume', this.sessionId);
+    }
+
+    this.proc = spawn('claude', args, {
       cwd: this.cwd,
       env: {
         ...process.env,
@@ -57,6 +63,10 @@ class ClaudeSession {
         if (!line.trim()) continue;
         try {
           const event = JSON.parse(line);
+          if (event.session_id && !this.sessionId) {
+            this.sessionId = event.session_id;
+            console.log(`[session] Captured session ${this.sessionId}`);
+          }
           this.broadcaster.broadcast({ type: 'chat:event', event });
         } catch {
           // Not valid JSON, send as raw text
@@ -75,6 +85,10 @@ class ClaudeSession {
       if (this.buffer.trim()) {
         try {
           const event = JSON.parse(this.buffer);
+          if (event.session_id && !this.sessionId) {
+            this.sessionId = event.session_id;
+            console.log(`[session] Captured session ${this.sessionId}`);
+          }
           this.broadcaster.broadcast({ type: 'chat:event', event });
         } catch {
           this.broadcaster.broadcast({ type: 'chat:output', text: this.buffer });
@@ -104,6 +118,11 @@ class ClaudeSession {
       this.proc.kill('SIGTERM');
       this.proc = null;
     }
+  }
+
+  clearSession() {
+    this.kill();
+    this.sessionId = null;
   }
 }
 
