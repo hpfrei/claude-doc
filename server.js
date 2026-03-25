@@ -9,7 +9,7 @@ const createProxyRouter = require('./src/proxy');
 const ClaudeSession = require('./src/claude-session');
 
 const PROXY_PORT = parseInt(process.env.PROXY_PORT || '3456');
-const DASHBOARD_PORT = parseInt(process.env.DASHBOARD_PORT || '3457');
+const DASHBOARD_PORT = parseInt(process.argv[2] || process.env.DASHBOARD_PORT || '3457');
 const TARGET_URL = process.env.ANTHROPIC_TARGET_URL || 'https://api.anthropic.com';
 const MAX_HISTORY = parseInt(process.env.MAX_HISTORY || '200');
 const AUTH_TOKEN = process.env.AUTH_TOKEN || crypto.randomUUID();

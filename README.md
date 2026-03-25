@@ -56,6 +56,12 @@ This stores your credentials locally. The Claude tab in the dashboard spawns `cl
 npm start
 ```
 
+You can optionally pass a dashboard port:
+
+```bash
+npm start -- 8080
+```
+
 On startup, an auth token is printed to the console. You'll need it to access the dashboard.
 
 ```
