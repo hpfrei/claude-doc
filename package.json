@@ -1,0 +1,14 @@
+{
+  "name": "claude-api-proxy",
+  "version": "1.0.0",
+  "description": "Transparent proxy for studying Claude Code API interactions",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "ws": "^8.18.0"
+  }
+}
