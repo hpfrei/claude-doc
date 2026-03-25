@@ -1,0 +1,54 @@
+/* hpflabs — bright, checker-paper look */
+:root {
+  --bg: #f5f5f0;
+  --bg-surface: #ffffff;
+  --bg-hover: #eeeee8;
+  --bg-selected: #dde4f0;
+  --border: #c0c0b8;
+  --text: #2c2c2c;
+  --text-dim: #777770;
+  --text-bright: #111111;
+  --accent: #2255aa;
+  --green: #1a8a3a;
+  --blue: #2255aa;
+  --red: #cc3344;
+  --orange: #c07020;
+  --purple: #7744bb;
+  --cyan: #1088aa;
+  --yellow: #9a7a20;
+
+  --status-connected-bg: #d4eedd;
+  --status-disconnected-bg: #f5d5d5;
+  --chat-user-bg: #dde4f0;
+  --chat-error-bg: #f5d5d5;
+  --chat-question-bg: #ece4f5;
+  --request-panel-bg: #fdf6e8;
+  --response-panel-bg: #e8f5eb;
+  --scrollbar-track: #eeeee8;
+  --scrollbar-thumb: #c0c0b8;
+  --scrollbar-thumb-hover: #999990;
+}
+
+/* Checker-paper grid background */
+body {
+  background-image:
+    linear-gradient(rgba(180, 200, 220, 0.25) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(180, 200, 220, 0.25) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+/* Slightly softer shadows for cards on light bg */
+.ref-card,
+.content-block,
+details {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.chat-bubble {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+/* Scrollbar for light theme */
+::-webkit-scrollbar-track { background: var(--scrollbar-track); }
+::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); }
+::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }

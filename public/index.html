@@ -4,7 +4,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Claude Code API Proxy Dashboard</title>
+  <link rel="stylesheet" id="themeLink" href="theme-dark.css">
   <link rel="stylesheet" href="style.css">
+  <script>
+    // Apply saved theme before paint to prevent flash
+    (function() {
+      var t = localStorage.getItem('theme') || 'dark';
+      document.getElementById('themeLink').href = 'theme-' + t + '.css';
+    })();
+  </script>
 </head>
 <body>
   <header>
@@ -19,6 +27,7 @@
     <div class="header-actions">
       <span id="status" class="status disconnected">disconnected</span>
       <button id="clearBtn">Clear History</button>
+      <button class="theme-toggle" id="themeToggle" title="Toggle theme">dark</button>
     </div>
   </header>
 
