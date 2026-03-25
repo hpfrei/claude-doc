@@ -21,11 +21,12 @@ Browser  --->  Dashboard (:3457)  <--- WebSocket --->  Proxy (:3456)  --->  Anth
 - Passes through SSE streaming transparently — Claude Code sees no difference
 - Records every request/response pair with timing, token usage, and full SSE event streams
 - Intercepts `AskUserQuestion` tool calls so they can be answered from the dashboard
+- Binds to `127.0.0.1` only — never exposed to the network
 
 ### Dashboard (port 3457)
 
 - **Inspector** — Timeline of every API call. Select any interaction to see the full request payload, response, individual SSE events, and extracted tool calls
-- **Claude** — Run Claude Code CLI sessions directly from the browser. Send prompts, see streamed output, stop running sessions. This is how I use it to operate Claude Code on a remote PC from any device
+- **Claude** — Run Claude Code CLI sessions directly from the browser. Send prompts, see streamed output, stop running sessions. Includes a settings panel to configure the project root directory. This is how I use it to operate Claude Code on a remote PC from any device
 - **Reference** — Built-in reference for Claude Code's tool schemas
 
 ## Getting started
@@ -55,6 +56,13 @@ This stores your credentials locally. The Claude tab in the dashboard spawns `cl
 npm start
 ```
 
+On startup, an auth token is printed to the console. You'll need it to access the dashboard.
+
+```
+  Auth token (auto-generated):
+  c0b253eb-c650-4def-ba2c-4b2b1b545d85
+```
+
 This starts two servers:
 
 | Server    | Port | Purpose                        |
@@ -68,12 +76,32 @@ This starts two servers:
 ANTHROPIC_BASE_URL=http://localhost:3456 claude -p "your prompt"
 ```
 
-Or open `http://localhost:3457` and use the Claude tab to send prompts directly from the browser.
+Or open `http://localhost:3457`, log in with the auth token, and use the Claude tab to send prompts directly from the browser.
+
+### Authentication
+
+The dashboard requires a token to access. On every startup:
+
+- If `AUTH_TOKEN` is set in the environment, that value is used
+- Otherwise, a random token is auto-generated and printed to the console
+
+The token is entered once in the browser login page and stored as an HttpOnly cookie. WebSocket connections are also authenticated.
+
+```bash
+# Use a fixed token
+AUTH_TOKEN=mysecret npm start
+```
+
+### Project root
+
+The Claude tab includes a settings panel (gear icon) where you can set the working directory for the spawned `claude -p` process. This lets you point Claude at any project on the machine. You can also set the default via the `PROJECT_DIR` environment variable.
 
 ### Environment variables
 
 | Variable               | Default                      | Description                    |
 |------------------------|------------------------------|--------------------------------|
+| `AUTH_TOKEN`           | *(auto-generated)*           | Dashboard auth token           |
+| `PROJECT_DIR`          | *(current working directory)*| Default project root for Claude|
 | `PROXY_PORT`           | `3456`                       | Port for the API proxy         |
 | `DASHBOARD_PORT`       | `3457`                       | Port for the web dashboard     |
 | `ANTHROPIC_TARGET_URL` | `https://api.anthropic.com`  | Upstream API URL               |
@@ -104,6 +132,7 @@ src/
   utils.js             Header filtering, ID generation, payload sanitization
 public/
   index.html           Dashboard UI (Inspector + Claude + Reference tabs)
+  login.html           Auth token login page
   app.js               Client-side state management and rendering
   style.css            Dashboard styles
   tools.html           Tool schema reference page

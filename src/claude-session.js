@@ -1,4 +1,5 @@
 const { spawn } = require('child_process');
+const fs = require('fs');
 
 class ClaudeSession {
   constructor(proxyPort, broadcaster) {
@@ -6,10 +7,20 @@ class ClaudeSession {
     this.broadcaster = broadcaster;
     this.proc = null;
     this.buffer = '';
+    this.cwd = process.env.PROJECT_DIR || process.cwd();
   }
 
   get running() {
     return this.proc !== null && this.proc.exitCode === null;
+  }
+
+  setCwd(dir) {
+    if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
+      return false;
+    }
+    this.cwd = dir;
+    this.broadcaster.broadcast({ type: 'chat:settings', cwd: this.cwd });
+    return true;
   }
 
   send(prompt) {
@@ -22,6 +33,7 @@ class ClaudeSession {
     this.broadcaster.broadcast({ type: 'chat:status', status: 'running' });
 
     this.proc = spawn('claude', ['-p', '--verbose', '--output-format', 'stream-json'], {
+      cwd: this.cwd,
       env: {
         ...process.env,
         ANTHROPIC_BASE_URL: `http://localhost:${this.proxyPort}`,

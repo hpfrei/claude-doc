@@ -488,6 +488,62 @@ footer {
   padding: 10px 16px;
 }
 
+.chat-settings {
+  margin-bottom: 8px;
+}
+
+.chat-settings-toggle {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+.chat-settings-toggle:hover { color: var(--text); }
+
+.chat-settings-panel {
+  margin-top: 6px;
+  padding: 8px 0;
+}
+
+.chat-settings-label {
+  font-size: 11px;
+  color: var(--text-dim);
+  display: block;
+  margin-bottom: 4px;
+}
+
+.chat-settings-row {
+  display: flex;
+  gap: 6px;
+}
+
+.chat-settings-input {
+  flex: 1;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-family: inherit;
+  font-size: 12px;
+  outline: none;
+}
+.chat-settings-input:focus { border-color: var(--accent); }
+
+.chat-settings-btn {
+  padding: 4px 10px;
+  font-size: 11px;
+  font-family: inherit;
+  background: var(--bg-hover);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.chat-settings-btn:hover { background: var(--bg-selected); }
+
 .chat-status-bar {
   display: flex;
   align-items: center;

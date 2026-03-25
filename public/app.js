@@ -133,7 +133,14 @@ function connect() {
     state.reconnectDelay = 1000;
   };
 
-  ws.onclose = () => {
+  ws.onclose = (evt) => {
+    if (evt.code === 1006 && state.reconnectDelay === 1000) {
+      // First failed attempt — likely auth rejection (401 before upgrade)
+      statusEl.textContent = 'unauthorized';
+      statusEl.className = 'status disconnected';
+      window.location.href = '/login';
+      return;
+    }
     statusEl.textContent = 'disconnected';
     statusEl.className = 'status disconnected';
     setTimeout(connect, state.reconnectDelay);
@@ -198,6 +205,10 @@ function handleMessage(msg) {
       break;
     case 'chat:status':
       updateChatStatus(msg.status);
+      break;
+
+    case 'chat:settings':
+      updateChatSettings(msg);
       break;
 
     case 'ask:question':
@@ -1113,6 +1124,41 @@ function updateChatStatus(status) {
   }
   if (chatSendBtn) {
     chatSendBtn.disabled = status === 'running';
+  }
+}
+
+// ============================================================
+// SETTINGS PANEL (project root)
+// ============================================================
+
+const chatSettingsToggle = document.getElementById('chatSettingsToggle');
+const chatSettingsPanel = document.getElementById('chatSettingsPanel');
+const chatCwdInput = document.getElementById('chatCwdInput');
+const chatCwdSetBtn = document.getElementById('chatCwdSetBtn');
+
+chatSettingsToggle?.addEventListener('click', () => {
+  chatSettingsPanel?.classList.toggle('hidden');
+});
+
+chatCwdSetBtn?.addEventListener('click', () => {
+  const cwd = chatCwdInput?.value?.trim();
+  if (!cwd) return;
+  if (state.ws?.readyState === WebSocket.OPEN) {
+    state.ws.send(JSON.stringify({ type: 'chat:setCwd', cwd }));
+  }
+});
+
+chatCwdInput?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    chatCwdSetBtn?.click();
+  }
+});
+
+function updateChatSettings(msg) {
+  if (msg.cwd && chatCwdInput) {
+    chatCwdInput.value = msg.cwd;
+    chatCwdInput.placeholder = msg.cwd;
   }
 }
 

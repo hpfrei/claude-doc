@@ -50,6 +50,16 @@
         </div>
       </div>
       <div class="chat-input-area">
+        <div class="chat-settings" id="chatSettings">
+          <button class="chat-settings-toggle" id="chatSettingsToggle" title="Settings">&#9881;</button>
+          <div class="chat-settings-panel hidden" id="chatSettingsPanel">
+            <label class="chat-settings-label">Project root</label>
+            <div class="chat-settings-row">
+              <input type="text" id="chatCwdInput" class="chat-settings-input" placeholder="/path/to/project">
+              <button id="chatCwdSetBtn" class="chat-settings-btn">Set</button>
+            </div>
+          </div>
+        </div>
         <div class="chat-status-bar">
           <span id="chatStatus" class="chat-status idle">idle</span>
           <button id="chatStopBtn" class="chat-stop hidden">Stop</button>

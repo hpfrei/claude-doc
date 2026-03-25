@@ -13,11 +13,14 @@ class DashboardBroadcaster {
       const interactions = this.store.getAll().map(sanitizeForDashboard);
       ws.send(JSON.stringify({ type: 'init', interactions }));
 
-      // Send current chat status
+      // Send current chat status and settings
       ws.send(JSON.stringify({
         type: 'chat:status',
         status: this.claudeSession?.running ? 'running' : 'idle',
       }));
+      if (this.claudeSession) {
+        ws.send(JSON.stringify({ type: 'chat:settings', cwd: this.claudeSession.cwd }));
+      }
 
       ws.on('message', (data) => {
         try {
@@ -29,6 +32,11 @@ class DashboardBroadcaster {
             this.claudeSession.send(msg.prompt || '');
           } else if (msg.type === 'chat:stop' && this.claudeSession) {
             this.claudeSession.kill();
+          } else if (msg.type === 'chat:setCwd' && this.claudeSession) {
+            const ok = this.claudeSession.setCwd(msg.cwd || '');
+            if (!ok) {
+              ws.send(JSON.stringify({ type: 'chat:error', text: `Invalid directory: ${msg.cwd}` }));
+            }
           } else if (msg.type === 'ask:answer') {
             // Resolve a pending AskUserQuestion
             const pending = pendingQuestions.get(msg.toolUseId);
