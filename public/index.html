@@ -213,41 +213,11 @@
           <label class="cap-field">Profile:
             <select id="capProfileSelect"></select>
           </label>
+          <span class="cap-profile-summary" id="capProfileSummary"></span>
+          <button class="cap-profile-action" id="capEditProfile" title="Edit profile settings">Edit</button>
           <button class="cap-profile-action" id="capNewProfile" title="Create new profile">+ New</button>
           <button class="cap-profile-action" id="capDuplicateProfile" title="Duplicate current profile">Duplicate</button>
           <button class="cap-profile-action cap-del-profile" id="capDeleteProfile" title="Delete current profile">Delete</button>
-          <span class="cap-toolbar-actions">
-            <button class="cap-apply-btn hidden" id="capApply">Save Profile</button>
-            <button class="cap-reset-btn hidden" id="capReset">Discard</button>
-          </span>
-        </div>
-        <div class="cap-toolbar-row">
-          <label class="cap-field" title="AI model">Model:
-            <select id="capModel"><option value="">default</option><option value="sonnet">sonnet</option><option value="opus">opus</option><option value="haiku">haiku</option></select>
-          </label>
-          <label class="cap-field" title="Reasoning effort level">Effort:
-            <select id="capEffort"><option value="">default</option><option value="low">low</option><option value="medium">medium</option><option value="high">high</option><option value="max">max</option></select>
-          </label>
-          <label class="cap-field" title="Permission mode">Permission:
-            <select id="capPermission"><option value="default">default</option><option value="acceptEdits">acceptEdits</option><option value="plan">plan</option><option value="bypassPermissions">bypassPermissions</option><option value="dontAsk">dontAsk</option><option value="auto">auto</option></select>
-          </label>
-          <label class="cap-field" title="Max agentic loop iterations">Max turns:
-            <input type="number" id="capMaxTurns" min="1" max="999" placeholder="--" style="width:50px">
-          </label>
-          <label class="cap-field" title="Dollar spend limit">Budget $:
-            <input type="number" id="capMaxBudget" min="0.01" step="0.01" placeholder="--" style="width:60px">
-          </label>
-          <label class="cap-field cap-check-field" title="Enable/disable all slash commands"><input type="checkbox" id="capSlash" checked> Slash commands</label>
-        </div>
-        <div class="cap-toolbar-row">
-          <label class="cap-field cap-field-wide" title="Text appended to Claude's system prompt">Append to system prompt:
-            <textarea id="capAppendPrompt" rows="2" placeholder="e.g. Focus on code quality and security..."></textarea>
-          </label>
-        </div>
-        <div class="cap-toolbar-row">
-          <label class="cap-field cap-field-wide" title="Completely replaces the default system prompt (use with caution)">Override system prompt:
-            <textarea id="capSystemPrompt" rows="2" placeholder="Leave empty to use default system prompt"></textarea>
-          </label>
         </div>
       </div>
 
@@ -1070,6 +1040,153 @@
     <span id="stats">0 requests</span>
     <a class="footer-credit" href="https://hpfreilabs.com" target="_blank" rel="noopener">by hpfreilabs.com</a>
   </footer>
+    <!-- ===================== PROFILE MODAL ===================== -->
+    <div class="cap-modal-backdrop hidden" id="profileModal">
+      <div class="cap-modal">
+        <div class="cap-modal-header">
+          <h3 id="profileModalTitle">New Profile</h3>
+          <button class="cap-modal-close" id="pmClose" title="Close">&times;</button>
+        </div>
+        <div class="cap-modal-body">
+          <div class="cap-modal-columns">
+            <div class="cap-modal-main">
+
+              <div class="pm-form-group">
+                <h4>Identity</h4>
+                <div class="pm-field-row">
+                  <label>Name: <input type="text" id="pmName" placeholder="my-profile" pattern="[a-z][a-z0-9-]*" title="Lowercase letters, numbers, hyphens. Min 2 chars."></label>
+                  <label>Label: <input type="text" id="pmLabel" placeholder="My Profile"></label>
+                </div>
+                <div class="pm-field-row">
+                  <label class="pm-wide">Description: <input type="text" id="pmDescription" placeholder="What this profile is for..."></label>
+                </div>
+              </div>
+
+              <div class="pm-form-group">
+                <h4>Model &amp; Effort</h4>
+                <div class="pm-field-row">
+                  <label>Model:
+                    <select id="pmModel">
+                      <option value="">default</option>
+                      <option value="sonnet">sonnet</option>
+                      <option value="opus">opus</option>
+                      <option value="haiku">haiku</option>
+                    </select>
+                  </label>
+                  <label>Effort:
+                    <select id="pmEffort">
+                      <option value="">default</option>
+                      <option value="low">low</option>
+                      <option value="medium">medium</option>
+                      <option value="high">high</option>
+                      <option value="max">max</option>
+                    </select>
+                  </label>
+                </div>
+              </div>
+
+              <div class="pm-form-group">
+                <h4>Permissions</h4>
+                <div class="pm-field-row">
+                  <label>Permission mode:
+                    <select id="pmPermission">
+                      <option value="default">default</option>
+                      <option value="acceptEdits">acceptEdits</option>
+                      <option value="plan">plan</option>
+                      <option value="bypassPermissions">bypassPermissions</option>
+                      <option value="dontAsk">dontAsk</option>
+                      <option value="auto">auto</option>
+                    </select>
+                  </label>
+                  <label class="pm-check"><input type="checkbox" id="pmSlash" checked> Slash commands</label>
+                </div>
+              </div>
+
+              <div class="pm-form-group">
+                <h4>Limits</h4>
+                <div class="pm-field-row">
+                  <label>Max turns: <input type="number" id="pmMaxTurns" min="1" max="999" placeholder="--" style="width:60px"></label>
+                  <label>Budget $: <input type="number" id="pmMaxBudget" min="0.01" step="0.01" placeholder="--" style="width:70px"></label>
+                </div>
+              </div>
+
+              <div class="pm-form-group">
+                <h4>Disabled Tools</h4>
+                <p class="cap-modal-hint">Unchecked tools are passed as <code>--disallowedTools</code> to the CLI. Claude cannot use disabled tools.</p>
+                <div class="pm-tool-grid" id="pmToolGrid"></div>
+              </div>
+
+              <div class="pm-form-group">
+                <h4>System Prompts</h4>
+                <label class="cap-modal-label">Append to system prompt <span class="cap-modal-hint" style="font-weight:normal">&mdash; added after the default prompt</span></label>
+                <textarea id="pmAppendPrompt" class="pm-textarea" rows="3" placeholder="e.g. Focus on code quality and security..."></textarea>
+                <label class="cap-modal-label" style="margin-top:10px">Override system prompt <span class="cap-modal-hint" style="font-weight:normal">&mdash; replaces the entire default (use with caution)</span></label>
+                <textarea id="pmSystemPrompt" class="pm-textarea" rows="3" placeholder="Leave empty to use default system prompt"></textarea>
+              </div>
+
+            </div>
+            <div class="cap-modal-docs">
+              <h4>CLI flag mapping</h4>
+              <pre class="cap-modal-pre">Field            CLI flag
+─────────────    ──────────────────────
+model            --model &lt;value&gt;
+effort           --effort &lt;level&gt;
+permission       --permission-mode &lt;mode&gt;
+slash cmds off   --disable-slash-commands
+disabled tools   --disallowedTools T1 T2
+max turns        --max-turns &lt;n&gt;
+budget           --max-budget-usd &lt;n&gt;
+append prompt    --append-system-prompt
+system prompt    --system-prompt</pre>
+
+              <h4>Permission modes</h4>
+              <pre class="cap-modal-pre">default        Ask for each tool use
+acceptEdits    Auto-accept file edits,
+               ask for Bash/other
+plan           Read-only, suggest changes
+               but don't apply them
+bypassPermissions  Skip all permission
+               prompts (dangerous!)
+dontAsk        Like bypass + auto-accept
+auto           Automatic mode with
+               guardrails</pre>
+
+              <h4>Built-in profiles</h4>
+              <pre class="cap-modal-pre">full     Everything enabled, default
+         perms, all tools
+
+safe     acceptEdits mode, blocks
+         Bash/Write/Edit/Notebook
+
+readonly plan mode, only Read/Glob/
+         Grep/AskUser, skills off
+
+minimal  plan mode, only Read/Glob/
+         Grep, skills off</pre>
+
+              <h4>System prompts</h4>
+              <p class="cap-modal-hint"><strong>Append</strong> adds text after Claude's built-in system prompt. Use for additional instructions, coding style preferences, or project-specific context.</p>
+              <p class="cap-modal-hint"><strong>Override</strong> completely replaces the default system prompt. Only use when you need full control &mdash; you lose all built-in tool instructions and safety guidelines.</p>
+
+              <h4>Tool restrictions</h4>
+              <p class="cap-modal-hint">Disabled tools are passed via <code>--disallowedTools</code>. Claude will not see these tools and cannot invoke them. Useful for restricting destructive operations (Write, Edit, Bash) in review-only profiles.</p>
+
+              <h4>Effort levels</h4>
+              <pre class="cap-modal-pre">low     Minimal reasoning, fast
+medium   Balanced (default behavior)
+high     More thorough analysis
+max      Extended thinking, deepest
+         reasoning (slower, costly)</pre>
+            </div>
+          </div>
+        </div>
+        <div class="cap-modal-footer">
+          <button class="cap-cancel-btn" id="pmCancel">Cancel</button>
+          <button class="cap-save-btn" id="pmSave">Save Profile</button>
+        </div>
+      </div>
+    </div>
+
     <!-- ===================== SKILL MODAL ===================== -->
     <div class="cap-modal-backdrop hidden" id="skillModal">
       <div class="cap-modal">

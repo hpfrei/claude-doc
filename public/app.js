@@ -1355,7 +1355,6 @@ function updateChatSettings(msg) {
   if (msg.capabilities) {
     state.capabilities = msg.capabilities;
     state.activeProfileName = msg.capabilities.name;
-    state.capabilitiesDirty = false;
   }
   if (msg.capabilities || msg.profiles) {
     renderCapabilitiesToolbar();
@@ -1519,8 +1518,6 @@ function markQuestionTimeout(toolUseId) {
 // ============================================================
 
 state.capabilities = null;
-state.capabilitiesDirty = false;
-state.capabilitiesServer = null; // last server-confirmed state
 state.profiles = [];
 state.activeProfileName = null;
 state.knownTools = [];
@@ -1623,47 +1620,26 @@ function renderCapabilitiesToolbar() {
     profileSel.value = c.name || 'full';
   }
 
-  // Disable delete for builtins
+  // Disable delete/edit for builtins
   const delBtn = document.getElementById('capDeleteProfile');
   if (delBtn) delBtn.disabled = !!c.builtin;
 
-  // Field values
-  const modelSel = document.getElementById('capModel');
-  const effortSel = document.getElementById('capEffort');
-  const permSel = document.getElementById('capPermission');
-  const maxInput = document.getElementById('capMaxTurns');
-  const budgetInput = document.getElementById('capMaxBudget');
-  const slashCheck = document.getElementById('capSlash');
-  const appendTA = document.getElementById('capAppendPrompt');
-  const sysTA = document.getElementById('capSystemPrompt');
-  const applyBtn = document.getElementById('capApply');
-  const resetBtn = document.getElementById('capReset');
-
-  if (modelSel) modelSel.value = c.model || '';
-  if (effortSel) effortSel.value = c.effort || '';
-  if (permSel) permSel.value = c.permissionMode || 'default';
-  if (maxInput) maxInput.value = c.maxTurns || '';
-  if (budgetInput) budgetInput.value = c.maxBudgetUsd || '';
-  if (slashCheck) slashCheck.checked = !c.disableSlashCommands;
-  if (appendTA) appendTA.value = c.appendSystemPrompt || '';
-  if (sysTA) sysTA.value = c.systemPrompt || '';
-
-  // Disable editing for builtin profiles
-  const editable = !c.builtin;
-  [modelSel, effortSel, permSel, maxInput, budgetInput, slashCheck, appendTA, sysTA].forEach(el => {
-    if (el) el.disabled = !editable;
-  });
-
-  if (applyBtn) applyBtn.classList.toggle('hidden', !state.capabilitiesDirty);
-  if (resetBtn) resetBtn.classList.toggle('hidden', !state.capabilitiesDirty);
-
-  // Update stats
-  updateCapabilityStats();
-
-  // Save server state for reset
-  if (!state.capabilitiesDirty) {
-    state.capabilitiesServer = JSON.parse(JSON.stringify(c));
+  // Profile summary
+  const summary = document.getElementById('capProfileSummary');
+  if (summary) {
+    const parts = [];
+    if (c.model) parts.push(c.model);
+    if (c.effort) parts.push(c.effort);
+    if (c.permissionMode && c.permissionMode !== 'default') parts.push(c.permissionMode);
+    if (c.maxTurns) parts.push(`${c.maxTurns} turns`);
+    if (c.maxBudgetUsd) parts.push(`$${c.maxBudgetUsd}`);
+    const disabledCount = c.disabledTools?.length || 0;
+    if (disabledCount > 0) parts.push(`${disabledCount} tools off`);
+    if (c.disableSlashCommands) parts.push('skills off');
+    summary.textContent = parts.length > 0 ? parts.join(' \u00b7 ') : 'defaults';
   }
+
+  updateCapabilityStats();
 }
 
 function updateCapabilityStats() {
@@ -1683,55 +1659,86 @@ function updateCapabilityStats() {
   if (hookCountEl) hookCountEl.textContent = state.hooks.length;
 }
 
-function markCapDirty() {
-  if (state.capabilities?.builtin) return; // cannot dirty builtins
-  state.capabilitiesDirty = true;
-  document.getElementById('capApply')?.classList.remove('hidden');
-  document.getElementById('capReset')?.classList.remove('hidden');
-  updateCapabilityStats();
-}
-
 // Profile selector (Capabilities tab)
 document.getElementById('capProfileSelect')?.addEventListener('change', (e) => {
   const name = e.target.value;
   if (!name) return;
-  if (state.capabilitiesDirty) {
-    if (!confirm('Discard unsaved changes to the current profile?')) {
-      e.target.value = state.capabilities?.name || '';
-      return;
-    }
-  }
   ws?.send(JSON.stringify({ type: 'chat:switchProfile', name }));
 });
 
-// Profile CRUD buttons
+// --- Profile Modal ---
+
+function openProfileModal(profile, mode) {
+  // mode: 'new', 'edit', 'duplicate'
+  const title = document.getElementById('profileModalTitle');
+  if (mode === 'new') title.textContent = 'New Profile';
+  else if (mode === 'duplicate') title.textContent = 'Duplicate Profile';
+  else title.textContent = `Edit Profile: ${profile.name}`;
+
+  const nameInput = document.getElementById('pmName');
+  nameInput.value = mode === 'duplicate' ? '' : (profile.name || '');
+  nameInput.readOnly = mode === 'edit';
+
+  document.getElementById('pmLabel').value = (mode === 'duplicate' ? '' : profile.label) || '';
+  document.getElementById('pmDescription').value = (mode === 'duplicate' ? '' : profile.description) || '';
+  document.getElementById('pmModel').value = profile.model || '';
+  document.getElementById('pmEffort').value = profile.effort || '';
+  document.getElementById('pmPermission').value = profile.permissionMode || 'default';
+  document.getElementById('pmMaxTurns').value = profile.maxTurns || '';
+  document.getElementById('pmMaxBudget').value = profile.maxBudgetUsd || '';
+  document.getElementById('pmSlash').checked = !profile.disableSlashCommands;
+  document.getElementById('pmAppendPrompt').value = profile.appendSystemPrompt || '';
+  document.getElementById('pmSystemPrompt').value = profile.systemPrompt || '';
+
+  // Tool checkbox grid
+  const grid = document.getElementById('pmToolGrid');
+  grid.innerHTML = '';
+  const disabled = new Set(profile.disabledTools || []);
+  for (const tool of state.knownTools) {
+    const item = document.createElement('label');
+    item.className = 'pm-tool-item';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = !disabled.has(tool);
+    cb.dataset.tool = tool;
+    item.appendChild(cb);
+    item.appendChild(document.createTextNode(' ' + tool));
+    grid.appendChild(item);
+  }
+
+  document.getElementById('profileModal')?.classList.remove('hidden');
+}
+
+function closeProfileModal() {
+  document.getElementById('profileModal')?.classList.add('hidden');
+}
+
+// New profile
 document.getElementById('capNewProfile')?.addEventListener('click', () => {
-  const name = prompt('Profile name (lowercase, hyphens ok):');
-  if (!name) return;
-  if (!/^[a-z][a-z0-9-]*$/.test(name) || name.length < 2) return alert('Invalid name. Use lowercase letters, numbers, and hyphens. Min 2 chars.');
-  ws?.send(JSON.stringify({
-    type: 'profile:save',
-    profile: {
-      name, label: name, description: '', builtin: false,
-      model: null, effort: null, permissionMode: 'default',
-      disabledTools: [], disableSlashCommands: false,
-      maxTurns: null, maxBudgetUsd: null, appendSystemPrompt: null, systemPrompt: null,
-    },
-  }));
-  // Switch to the new profile after a short delay for the broadcast to arrive
-  setTimeout(() => ws?.send(JSON.stringify({ type: 'chat:switchProfile', name })), 200);
+  openProfileModal({
+    name: '', label: '', description: '', builtin: false,
+    model: null, effort: null, permissionMode: 'default',
+    disabledTools: [], disableSlashCommands: false,
+    maxTurns: null, maxBudgetUsd: null, appendSystemPrompt: null, systemPrompt: null,
+  }, 'new');
 });
 
+// Edit profile
+document.getElementById('capEditProfile')?.addEventListener('click', () => {
+  if (!state.capabilities) return;
+  if (state.capabilities.builtin) {
+    return alert('Built-in profiles cannot be edited. Use "Duplicate" to create an editable copy.');
+  }
+  openProfileModal(state.capabilities, 'edit');
+});
+
+// Duplicate profile
 document.getElementById('capDuplicateProfile')?.addEventListener('click', () => {
-  const source = state.capabilities?.name;
-  if (!source) return;
-  const name = prompt('Name for the copy:', source + '-copy');
-  if (!name) return;
-  if (!/^[a-z][a-z0-9-]*$/.test(name) || name.length < 2) return alert('Invalid name.');
-  ws?.send(JSON.stringify({ type: 'profile:duplicate', source, newName: name }));
-  setTimeout(() => ws?.send(JSON.stringify({ type: 'chat:switchProfile', name })), 200);
+  if (!state.capabilities) return;
+  openProfileModal(state.capabilities, 'duplicate');
 });
 
+// Delete profile
 document.getElementById('capDeleteProfile')?.addEventListener('click', () => {
   const name = state.capabilities?.name;
   if (!name) return;
@@ -1740,72 +1747,48 @@ document.getElementById('capDeleteProfile')?.addEventListener('click', () => {
   ws?.send(JSON.stringify({ type: 'profile:delete', name }));
 });
 
-// Toolbar field listeners
-document.getElementById('capModel')?.addEventListener('change', (e) => {
-  if (!state.capabilities || state.capabilities.builtin) return;
-  state.capabilities.model = e.target.value || null;
-  markCapDirty();
-});
-
-document.getElementById('capEffort')?.addEventListener('change', (e) => {
-  if (!state.capabilities || state.capabilities.builtin) return;
-  state.capabilities.effort = e.target.value || null;
-  markCapDirty();
-});
-
-document.getElementById('capPermission')?.addEventListener('change', (e) => {
-  if (!state.capabilities || state.capabilities.builtin) return;
-  state.capabilities.permissionMode = e.target.value || 'default';
-  markCapDirty();
-});
-
-document.getElementById('capMaxTurns')?.addEventListener('change', (e) => {
-  if (!state.capabilities || state.capabilities.builtin) return;
-  const v = parseInt(e.target.value);
-  state.capabilities.maxTurns = v > 0 ? v : null;
-  markCapDirty();
-});
-
-document.getElementById('capMaxBudget')?.addEventListener('change', (e) => {
-  if (!state.capabilities || state.capabilities.builtin) return;
-  const v = parseFloat(e.target.value);
-  state.capabilities.maxBudgetUsd = v > 0 ? v : null;
-  markCapDirty();
-});
-
-document.getElementById('capSlash')?.addEventListener('change', (e) => {
-  if (!state.capabilities || state.capabilities.builtin) return;
-  state.capabilities.disableSlashCommands = !e.target.checked;
-  markCapDirty();
-  renderSkillsPanel();
-});
-
-document.getElementById('capAppendPrompt')?.addEventListener('input', (e) => {
-  if (!state.capabilities || state.capabilities.builtin) return;
-  state.capabilities.appendSystemPrompt = e.target.value.trim() || null;
-  markCapDirty();
-});
-
-document.getElementById('capSystemPrompt')?.addEventListener('input', (e) => {
-  if (!state.capabilities || state.capabilities.builtin) return;
-  state.capabilities.systemPrompt = e.target.value.trim() || null;
-  markCapDirty();
-});
-
-document.getElementById('capApply')?.addEventListener('click', () => {
-  if (!state.capabilities) return;
-  ws?.send(JSON.stringify({ type: 'chat:setCapabilities', capabilities: state.capabilities }));
-});
-
-document.getElementById('capReset')?.addEventListener('click', () => {
-  if (state.capabilitiesServer) {
-    state.capabilities = JSON.parse(JSON.stringify(state.capabilitiesServer));
-    state.capabilitiesDirty = false;
-    renderCapabilitiesToolbar();
-    renderToolCheckboxes();
-    renderSkillsPanel();
+// Save from modal
+document.getElementById('pmSave')?.addEventListener('click', () => {
+  const name = document.getElementById('pmName')?.value?.trim();
+  if (!name) return alert('Profile name is required.');
+  if (!/^[a-z][a-z0-9-]*$/.test(name) || name.length < 2) {
+    return alert('Invalid name. Use lowercase letters, numbers, and hyphens. Min 2 chars.');
   }
+
+  // Collect disabled tools from unchecked checkboxes
+  const disabledTools = [];
+  document.querySelectorAll('#pmToolGrid input[type="checkbox"]').forEach(cb => {
+    if (!cb.checked) disabledTools.push(cb.dataset.tool);
+  });
+
+  const maxT = parseInt(document.getElementById('pmMaxTurns')?.value);
+  const maxB = parseFloat(document.getElementById('pmMaxBudget')?.value);
+
+  const profile = {
+    name,
+    label: document.getElementById('pmLabel')?.value?.trim() || name,
+    description: document.getElementById('pmDescription')?.value?.trim() || '',
+    builtin: false,
+    model: document.getElementById('pmModel')?.value || null,
+    effort: document.getElementById('pmEffort')?.value || null,
+    permissionMode: document.getElementById('pmPermission')?.value || 'default',
+    disabledTools,
+    disableSlashCommands: !document.getElementById('pmSlash')?.checked,
+    maxTurns: maxT > 0 ? maxT : null,
+    maxBudgetUsd: maxB > 0 ? maxB : null,
+    appendSystemPrompt: document.getElementById('pmAppendPrompt')?.value?.trim() || null,
+    systemPrompt: document.getElementById('pmSystemPrompt')?.value?.trim() || null,
+  };
+
+  // Send save then switch — sequential on same WS, no race condition
+  ws?.send(JSON.stringify({ type: 'profile:save', profile }));
+  ws?.send(JSON.stringify({ type: 'chat:switchProfile', name }));
+  closeProfileModal();
 });
+
+// Cancel from modal
+document.getElementById('pmClose')?.addEventListener('click', closeProfileModal);
+document.getElementById('pmCancel')?.addEventListener('click', closeProfileModal);
 
 // --- Skills Panel ---
 
@@ -1864,7 +1847,6 @@ function renderToolCheckboxes() {
   const c = state.capabilities;
   if (!c) return;
   const disabled = new Set(c.disabledTools || []);
-  const isBuiltin = !!c.builtin;
 
   document.querySelectorAll('#ref-tools .ref-card').forEach(card => {
     const nameEl = card.querySelector('.ref-name');
@@ -1872,31 +1854,19 @@ function renderToolCheckboxes() {
     const toolName = nameEl.textContent.trim();
     if (!state.knownTools.includes(toolName)) return;
 
-    // Add checkbox if not already present
+    // Add read-only indicator checkbox if not already present
     let cb = card.querySelector('.ref-card-check');
     if (!cb) {
       cb = document.createElement('input');
       cb.type = 'checkbox';
       cb.className = 'ref-card-check';
+      cb.disabled = true;
       cb.addEventListener('click', (e) => e.stopPropagation());
-      cb.addEventListener('change', (e) => {
-        const name = e.target.closest('.ref-card').querySelector('.ref-name').textContent.trim();
-        if (!state.capabilities || state.capabilities.builtin) return;
-        if (e.target.checked) {
-          state.capabilities.disabledTools = state.capabilities.disabledTools.filter(t => t !== name);
-        } else {
-          if (!state.capabilities.disabledTools.includes(name)) {
-            state.capabilities.disabledTools.push(name);
-          }
-        }
-        e.target.closest('.ref-card').classList.toggle('disabled', !e.target.checked);
-        markCapDirty();
-      });
       const header = card.querySelector('.ref-card-header');
       header.insertBefore(cb, header.firstChild);
     }
     cb.checked = !disabled.has(toolName);
-    cb.disabled = isBuiltin;
+    cb.disabled = true;
     card.classList.toggle('disabled', disabled.has(toolName));
   });
 }
