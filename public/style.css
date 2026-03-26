@@ -635,34 +635,26 @@ footer {
 }
 .chat-cwd-set:hover { background: var(--bg-selected); }
 
-.chat-perm-btn {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
+.chat-profile-select {
   background: var(--bg);
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 4px;
-  padding: 4px 10px;
+  padding: 4px 8px;
   font-family: inherit;
   font-size: 11px;
   cursor: pointer;
-  white-space: nowrap;
-  transition: background 0.15s, border-color 0.15s;
+  max-width: 200px;
 }
-.chat-perm-btn:hover {
-  background: var(--bg-hover);
+.chat-profile-select:hover {
   border-color: var(--text-dim);
 }
 
-.chat-perm-value {
-  font-weight: 600;
-}
-
-.chat-perm-comment {
+.chat-profile-info {
   color: var(--text-dim);
   font-size: 10px;
   font-style: italic;
+  white-space: nowrap;
 }
 
 .chat-status-bar {
@@ -1252,6 +1244,7 @@ footer {
 .tag-mt { color: var(--green); background: color-mix(in srgb, var(--green) 10%, transparent); border: 1px solid color-mix(in srgb, var(--green) 20%, transparent); }
 .tag-sk { color: var(--cyan); background: color-mix(in srgb, var(--cyan) 10%, transparent); border: 1px solid color-mix(in srgb, var(--cyan) 20%, transparent); }
 .tag-hk { color: var(--orange); background: color-mix(in srgb, var(--orange) 10%, transparent); border: 1px solid color-mix(in srgb, var(--orange) 20%, transparent); }
+.tag-sk { color: var(--cyan); background: color-mix(in srgb, var(--cyan) 10%, transparent); border: 1px solid color-mix(in srgb, var(--cyan) 20%, transparent); }
 
 /* Intro block */
 .ref-intro {
@@ -1402,6 +1395,49 @@ footer {
   color: var(--text-dim);
 }
 .cap-reset-btn:hover { color: var(--text); }
+
+/* Profile action buttons */
+.cap-profile-action {
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-dim);
+  cursor: pointer;
+  font-family: inherit;
+}
+.cap-profile-action:hover { color: var(--text); background: var(--bg-hover); }
+.cap-del-profile { color: var(--red); }
+.cap-del-profile:hover { border-color: var(--red); }
+.cap-del-profile:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Wide fields (system prompt textareas) */
+.cap-field-wide {
+  flex: 1 1 100%;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+.cap-field-wide textarea {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 11px;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  resize: vertical;
+  box-sizing: border-box;
+}
+.cap-field-wide textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* Skills status */
+.cap-skills-status strong { color: var(--green); }
 
 /* Tool card checkbox */
 .ref-card-check {

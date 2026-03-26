@@ -12,8 +12,7 @@ class ClaudeSession {
     this.cwd = process.env.PROJECT_DIR || process.cwd();
     this.sessionId = null;
     this.ready = false;
-    this.permissionMode = 'default';
-    this.capabilities = caps.loadProfile(process.cwd());
+    this.capabilities = caps.loadActiveProfile(process.cwd());
   }
 
   setReady() {
@@ -33,27 +32,23 @@ class ClaudeSession {
     return true;
   }
 
-  setPermissionMode(mode) {
-    const valid = ['default', 'acceptEdits', 'plan', 'bypassPermissions', 'dontAsk'];
-    if (!valid.includes(mode)) return false;
-    this.permissionMode = mode;
-    this._broadcastSettings();
-    return true;
-  }
-
   setCapabilities(profile) {
     this.capabilities = caps.validateProfile(profile);
-    caps.saveProfile(process.cwd(), this.capabilities);
+    // Save custom profiles to disk; builtins are not saved
+    if (!caps.BUILTIN_PROFILES[this.capabilities.name]) {
+      caps.saveProfile(process.cwd(), this.capabilities);
+    }
+    caps.setActiveProfile(process.cwd(), this.capabilities.name);
     if (this.running) this.kill();
     this._broadcastSettings();
     return true;
   }
 
-  loadPreset(name) {
-    const preset = caps.PRESETS[name];
-    if (!preset) return false;
-    this.capabilities = { ...preset };
-    caps.saveProfile(process.cwd(), this.capabilities);
+  switchProfile(name) {
+    const profile = caps.loadProfile(process.cwd(), name);
+    if (!profile) return false;
+    this.capabilities = profile;
+    caps.setActiveProfile(process.cwd(), name);
     if (this.running) this.kill();
     this._broadcastSettings();
     return true;
@@ -63,7 +58,6 @@ class ClaudeSession {
     this.broadcaster.broadcast({
       type: 'chat:settings',
       cwd: this.cwd,
-      permissionMode: this.permissionMode,
       capabilities: this.capabilities,
     });
   }
@@ -86,19 +80,22 @@ class ClaudeSession {
     this.broadcaster.broadcast({ type: 'chat:status', status: 'running' });
 
     const args = ['-p', '--verbose', '--output-format', 'stream-json'];
-    if (this.permissionMode && this.permissionMode !== 'default') {
-      args.push('--permission-mode', this.permissionMode);
-    }
     if (this.sessionId) {
       args.push('--resume', this.sessionId);
     }
-    // Capability flags
+    // Profile-based capability flags
     const c = this.capabilities;
+    if (c.permissionMode && c.permissionMode !== 'default') {
+      args.push('--permission-mode', c.permissionMode);
+    }
     if (c.disabledTools && c.disabledTools.length > 0) {
       args.push('--disallowedTools', ...c.disabledTools);
     }
     if (c.model) {
       args.push('--model', c.model);
+    }
+    if (c.effort) {
+      args.push('--effort', c.effort);
     }
     if (c.disableSlashCommands) {
       args.push('--disable-slash-commands');
@@ -106,8 +103,14 @@ class ClaudeSession {
     if (c.maxTurns) {
       args.push('--max-turns', String(c.maxTurns));
     }
+    if (c.maxBudgetUsd) {
+      args.push('--max-budget-usd', String(c.maxBudgetUsd));
+    }
     if (c.appendSystemPrompt) {
       args.push('--append-system-prompt', c.appendSystemPrompt);
+    }
+    if (c.systemPrompt) {
+      args.push('--system-prompt', c.systemPrompt);
     }
 
     this.proc = spawn('claude', args, {
