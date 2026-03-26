@@ -15,26 +15,40 @@ I built this to study how Claude Code actually talks to the Anthropic API — wh
 ### API Inspector
 
 ```
-                          ┌──────────────────┐
-                          │  claude-doc server│
-Browser ── WS ──>         │                  │
-(:3457)                   │  proxy    :3456  │──────>  Anthropic API
-                          │  dashboard :3457 │
-                          └──────┬───────────┘
-                                 │
-                    ┌────────────┼────────────┐
-                    │            │             │
-              Built-in       External      Inspector
-             claude -p      claude -p       (saves
-            (spawned,      (your terminal)   all JSON)
-             --resume)
-                │
-    ┌───────────┴───────────┐
-    │  Capability Profile   │    .claude/
-    │  model, effort, perms │    ├── skills/
-    │  tools, budget, prompt│    ├── agents/
-    │  ──> CLI flags        │    └── hooks
-    └───────────────────────┘
+                              ┌──────────────────────────┐
+                              │     claude-doc server     │
+ Browser ── WebSocket ──>     │                          │
+ (:3457)                      │  proxy :3456  (SSE pass) │──── HTTP/SSE ──>  Anthropic API
+                              │  dashboard :3457  (WS)   │                  api.anthropic.com
+                              └────────┬──────┬──────────┘
+                                       │      │
+                          ┌────────────┘      └────────────┐
+                          │                                │
+                    Built-in claude -p               External claude -p
+                   (spawned, --resume)              (your terminal)
+                   stream-json output
+                          │
+         ┌────────────────┼────────────────┐
+         │                │                │
+  ┌──────┴──────┐  ┌──────┴──────┐  ┌─────┴──────────────────────────┐
+  │ Capability  │  │  .claude/   │  │     MCP Server Manager         │
+  │ Profile     │  │  skills/    │  │                                │
+  │             │  │  agents/    │  │  mcp-servers/<slug>/           │
+  │ model       │  │  hooks      │  │    meta.json, server.js        │
+  │ effort      │  │  commands/  │  │                                │
+  │ permissions │  │  settings   │  │  Worker Host ── IPC ── Workers │
+  │ tools       │  │  .local.json│  │  (fork, hot-reload, approval)  │
+  │ budget      │  └─────────────┘  │                                │
+  │ mcpServers[]│                   │  MCP Bridge (stdio JSON-RPC)   │
+  │  ──> CLI    │                   │  lib/mcp-bridge.js             │
+  │     flags   │                   │  Claude Code spawns via        │
+  │  ──> --mcp- │ ── writes ──>    │  --mcp-config temp file        │
+  │     config  │  /tmp/config.json │                                │
+  └─────────────┘                   │  Registrar ── ~/.claude.json   │
+                                    │  Logs ── JSONL daily files     │
+        interactions/               │  Templates ── blank, REST,     │
+        <session>/<seq>.json        │    JSON store, file tools      │
+        (full request/response)     └────────────────────────────────┘
 ```
 
 - **Full request/response capture** — every `/v1/messages` and `/v1/messages/count_tokens` call, with headers, payloads, and timing
@@ -62,11 +76,26 @@ Browser ── WS ──>         │                  │
 
 The Capabilities tab lets you control and extend Claude Code directly from the browser:
 
-- **Named profiles** — create, duplicate, and switch between capability profiles (Full, Safe, Read-only, Minimal built-in). Each profile bundles model, effort level, permission mode, disabled tools, max turns, budget cap, and system prompt overrides — all passed as CLI flags to `claude -p`
+- **Named profiles** — create, duplicate, and switch between capability profiles (Full, Safe, Read-only, Minimal built-in). Each profile bundles model, effort level, permission mode, disabled tools, max turns, budget cap, system prompt overrides, and MCP server selection — all passed as CLI flags to `claude -p`
 - **Tool control** — enable/disable any of the 26 built-in tools via checkboxes per profile. Disabled tools are passed as `--disallowedTools` to the CLI
 - **Custom skills** — create, edit, and delete skills stored in `.claude/skills/<name>/SKILL.md` with supporting files (templates, scripts, examples). Claude triggers them automatically based on description match, or users invoke via `/name`. Built-in skills listed for reference
 - **Custom agents** — create, edit, and delete sub-agents with custom system prompts, model selection, and tool restrictions. Stored in `.claude/agents/`
 - **Hook editor** — create, edit, and delete lifecycle hooks (PreToolUse, PostToolUse, Stop, etc.) with three handler types (command, prompt, agent). Stored in `.claude/settings.local.json`
+- **MCP Server Manager** — create, edit, test, and manage custom MCP (Model Context Protocol) tool servers directly from the browser. See the dedicated section below
+
+### MCP Server Manager
+
+The MCP Servers tab in Capabilities lets you build custom tool servers that extend Claude Code's capabilities through the Model Context Protocol:
+
+- **Server CRUD** — create servers from starter templates (blank, REST API wrapper, JSON data store, file tools), edit code in a browser-based editor, manage dependencies, and delete servers. Each server lives in its own `mcp-servers/<slug>/` directory with isolated `node_modules/`
+- **Template picker** — choose from four starter templates when creating a new server. Templates include pre-built tool definitions using the MCP SDK and Zod schemas
+- **Code editor** — edit `server.js` and supporting files directly in the browser. File tree navigation, output panel for server stdout/stderr, and SDK quick reference sidebar
+- **Dependency management** — install/uninstall npm packages per server. The MCP SDK and Zod are provided by the host app (bundled, no install needed)
+- **Testing console** — select a tool from the running server, fill in parameters via a dynamically generated form (based on the tool's Zod schema), execute, and see the result with latency timing
+- **Logs** — all tool calls (from Claude Code and test invocations) are logged as daily JSONL files with filtering, search, and stats (total calls, error rate, average latency)
+- **Profile integration** — each capability profile has an `mcpServers[]` field. Select which MCP servers to enable per profile. Selected servers are written to a temp config file and passed to `claude -p` via `--mcp-config`
+
+**Architecture:** Your server code runs in an isolated child process (forked by the Worker Host). A lightweight bridge script (`lib/mcp-bridge.js`) relays JSON-RPC messages between Claude Code and the server through the dashboard's WebSocket connection. The dashboard must be running for Claude Code to reach your custom tools.
 
 ### Themes
 
@@ -173,6 +202,7 @@ The profile selector in the Claude tab toolbar (and Capabilities tab) lets you s
 | System prompt       | `--append-system-prompt`    | Append to default system prompt |
 | System override     | `--system-prompt`           | Replace default system prompt entirely |
 | Slash commands      | `--disable-slash-commands`  | Enable/disable all built-in skills |
+| MCP servers         | `--mcp-config`              | Select which custom MCP tool servers to enable |
 
 Built-in profiles (Full, Safe, Read-only, Minimal) cannot be modified — duplicate them to create editable copies. Custom profiles are stored in `capabilities/profiles/`.
 
@@ -209,18 +239,37 @@ src/
   proxy.js             Express router, API forwarding, AskUserQuestion interception
   sse-passthrough.js   Transform stream that taps SSE events without buffering
   claude-session.js    Spawns and manages claude -p subprocess with session resume
+                       Builds MCP config and injects via --mcp-config
   dashboard-ws.js      WebSocket server, broadcasts events to connected dashboards
   capabilities.js      Named profiles, tool/skill/agent/hook CRUD, built-in presets
   store.js             In-memory interaction store with disk persistence and session management
   utils.js             Header filtering, ID generation, payload sanitization
+  mcp/
+    index.js           MCP module entrypoint — init, WS dispatch, shutdown
+    servers.js         Server CRUD, file operations, dependency management
+    registrar.js       Reads/writes ~/.claude.json and .mcp.json for server registration
+    logs.js            JSONL log append, read, filter, stats, rotation
+    templates.js       Template discovery and instantiation
+    worker-host.js     Fork/manage worker processes, IPC relay, approval gate (Phase 2)
+    worker-entry.js    Bootstrap script for forked worker processes (Phase 2)
+lib/
+  mcp-bridge.js        Standalone stdio bridge Claude Code spawns via --mcp-config (Phase 2)
+templates/mcp-servers/
+  blank/               Empty server with hello tool
+  rest-api-wrapper/    HTTP GET/POST with configurable BASE_URL
+  json-data-store/     Key-value store backed by JSON file
+  file-tools/          Read, write, list, search files with ROOT_DIR
 public/
   index.html           Dashboard UI (Inspector + Claude + Capabilities tabs)
   login.html           Auth token login page
   app.js               Client-side state management and rendering
+  mcp.js               MCP Server Manager frontend module
+  mcp.css              MCP-specific styles
   style.css            Layout and structural styles
   theme-bright.css     Bright checker-paper theme (default)
   theme-dark.css       Dark theme (Tokyo Night)
   tools.html           Tool schema reference page
+mcp-servers/           Runtime storage for user-created MCP servers
 ```
 
 ## Contributing

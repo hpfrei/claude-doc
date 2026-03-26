@@ -1,0 +1,6 @@
+{
+  "name": "JSON Data Store",
+  "description": "Persistent key-value store backed by a local JSON file. Tools: get, set, delete, list_keys.",
+  "icon": "💾",
+  "extraDeps": []
+}

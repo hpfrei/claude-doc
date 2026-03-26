@@ -7,6 +7,7 @@ const InteractionStore = require('./src/store');
 const DashboardBroadcaster = require('./src/dashboard-ws');
 const createProxyRouter = require('./src/proxy');
 const ClaudeSession = require('./src/claude-session');
+const mcp = require('./src/mcp');
 
 const PROXY_PORT = parseInt(process.env.PROXY_PORT || '3456');
 const DASHBOARD_PORT = parseInt(process.argv[2] || process.env.DASHBOARD_PORT || '3457');
@@ -61,7 +62,7 @@ dashboardApp.use(express.static(path.join(__dirname, 'public')));
 const dashboardServer = http.createServer(dashboardApp);
 
 // Claude session (spawns claude -p through the proxy)
-const claudeSession = new ClaudeSession(PROXY_PORT, { broadcast: (...args) => broadcaster.broadcast(...args) }, store);
+const claudeSession = new ClaudeSession(PROXY_PORT, { broadcast: (...args) => broadcaster.broadcast(...args) }, store, { authToken: AUTH_TOKEN, dashboardPort: DASHBOARD_PORT });
 
 // WebSocket server on dashboard (with auth)
 const wss = new WebSocketServer({ noServer: true });
@@ -81,6 +82,9 @@ dashboardServer.on('upgrade', (req, socket, head) => {
 
 // Fix circular ref: point session's broadcaster at the real one
 claudeSession.broadcaster = broadcaster;
+
+// Initialize MCP Server Manager
+mcp.init({ broadcaster, store, claudeSession, authToken: AUTH_TOKEN, dashboardPort: DASHBOARD_PORT });
 
 // Start both servers (proxy on localhost only)
 proxyServer.listen(PROXY_PORT, '127.0.0.1', () => {

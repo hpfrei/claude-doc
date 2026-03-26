@@ -8,6 +8,7 @@ class DashboardBroadcaster {
     this.wss = wss;
     this.store = store;
     this.claudeSession = claudeSession;
+    this.mcpHandler = null; // Set externally by src/mcp/index.js
 
     this.wss.on('connection', (ws) => {
       // Send full history on connect
@@ -21,6 +22,9 @@ class DashboardBroadcaster {
       }));
       if (this.claudeSession) {
         const cwd = this.claudeSession.cwd;
+        // Collect available MCP servers for profile editor
+        let mcpServers = [];
+        try { mcpServers = require('./mcp/servers').listServers(); } catch {}
         ws.send(JSON.stringify({
           type: 'chat:settings',
           cwd,
@@ -30,6 +34,7 @@ class DashboardBroadcaster {
           knownSkills: caps.KNOWN_SKILLS,
           hookEvents: caps.HOOK_EVENTS,
           matcherEvents: caps.MATCHER_EVENTS,
+          mcpServers,
         }));
         // Send skills, agents, hooks for capabilities tab
         ws.send(JSON.stringify({ type: 'skill:list', skills: caps.listSkills(cwd) }));
@@ -43,6 +48,9 @@ class DashboardBroadcaster {
         sessions: this.store.listSessions(),
         activeId: this.store.sessionId,
       }));
+
+      // MCP Server Manager init
+      if (this.mcpHandler) this.mcpHandler.onConnect(ws);
 
       ws.on('message', (data) => {
         try {
@@ -173,8 +181,11 @@ class DashboardBroadcaster {
             const cwd = this.claudeSession?.cwd || process.cwd();
             const ok = caps.deleteHook(cwd, msg.event, msg.entryIndex);
             if (ok) this.broadcast({ type: 'hook:list', hooks: caps.listHooks(cwd) });
+          // --- MCP Servers ---
+          } else if (msg.type.startsWith('mcp:')) {
+            if (this.mcpHandler) this.mcpHandler.handleMessage(ws, msg, this);
           }
-        } catch {}
+        } catch (err) { console.error('WS message handling error:', err); }
       });
     });
   }
@@ -248,7 +259,7 @@ class DashboardBroadcaster {
       if (client.readyState === WebSocket.OPEN) {
         try {
           client.send(data);
-        } catch {}
+        } catch (err) { console.error('WS broadcast error:', err); }
       }
     }
   }
