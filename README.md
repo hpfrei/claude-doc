@@ -47,6 +47,7 @@ Browser ── WS ──>         │                  │
 - **Permission mode** — click to cycle through `default`, `acceptEdits`, `plan`, `bypassPermissions`, and `dontAsk` — passed as `--permission-mode` to the CLI
 - **Working directory** — click the folder icon to set the project directory Claude operates in
 - **AskUserQuestion interception** — when Claude Code asks a question (tool selection, confirmations, clarifications), the question appears in the browser and your answer is injected back into the conversation
+- **Live task & todo panel** — `TaskCreate`, `TaskUpdate`, and `TodoWrite` tool calls are intercepted from the SSE stream and displayed as a live, draggable panel in the Claude tab. Tasks show status icons, descriptions, dependency chains, and auto-unblock. Todos preserve their original ordering. The panel collapses to a header launcher button when dismissed
 - **Process control** — stop a running session at any time
 - **Architecture diagram** — the welcome screen shows an interactive SVG diagram of how all the pieces connect
 
