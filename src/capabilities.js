@@ -147,12 +147,13 @@ function loadActiveProfile(baseDir) {
         if (profile) return profile;
       }
     }
-  } catch {}
+  } catch (err) { console.error('Error loading active profile:', err); }
   return JSON.parse(JSON.stringify(BUILTIN_PROFILES.full));
 }
 
 function saveProfile(baseDir, profile) {
   const validated = validateProfile(profile);
+  if (!isValidName(validated.name)) return false;
   // Cannot overwrite builtin names
   if (BUILTIN_PROFILES[validated.name]) return false;
   const dir = profilesDir(baseDir);
@@ -162,6 +163,7 @@ function saveProfile(baseDir, profile) {
 }
 
 function deleteProfile(baseDir, name) {
+  if (!isValidName(name)) return false;
   if (BUILTIN_PROFILES[name]) return false;
   const file = profileFilePath(baseDir, name);
   if (!fs.existsSync(file)) return false;
@@ -173,11 +175,12 @@ function deleteProfile(baseDir, name) {
       const { active } = JSON.parse(fs.readFileSync(actFile, 'utf-8'));
       if (active === name) setActiveProfile(baseDir, 'full');
     }
-  } catch {}
+  } catch (err) { console.error('Error resetting active profile after delete:', err); }
   return true;
 }
 
 function setActiveProfile(baseDir, name) {
+  if (!BUILTIN_PROFILES[name] && !isValidName(name)) return false;
   const dir = path.join(baseDir, 'capabilities');
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(activeFilePath(baseDir), JSON.stringify({ active: name }, null, 2));
@@ -207,6 +210,7 @@ function validateProfile(p) {
     maxBudgetUsd: typeof p.maxBudgetUsd === 'number' && p.maxBudgetUsd > 0 ? p.maxBudgetUsd : null,
     appendSystemPrompt: typeof p.appendSystemPrompt === 'string' && p.appendSystemPrompt.trim() ? p.appendSystemPrompt.trim() : null,
     systemPrompt: typeof p.systemPrompt === 'string' && p.systemPrompt.trim() ? p.systemPrompt.trim() : null,
+    mcpServers: Array.isArray(p.mcpServers) ? p.mcpServers.filter(s => typeof s === 'string') : [],
   };
 }
 
@@ -286,10 +290,10 @@ function saveSkill(cwd, name, content, extraFiles) {
   if (Array.isArray(extraFiles)) {
     for (const f of extraFiles) {
       if (!f.name || typeof f.content !== 'string') continue;
-      // Prevent path traversal
-      const clean = path.normalize(f.name).replace(/^(\.\.[/\\])+/, '');
-      if (clean.startsWith('/') || clean.includes('..')) continue;
-      const filePath = path.join(dir, clean);
+      // Prevent path traversal — resolve and verify containment
+      const clean = path.normalize(f.name);
+      const filePath = path.resolve(dir, clean);
+      if (!filePath.startsWith(dir + path.sep) && filePath !== dir) continue;
       const fileDir = path.dirname(filePath);
       if (!fs.existsSync(fileDir)) fs.mkdirSync(fileDir, { recursive: true });
       fs.writeFileSync(filePath, f.content);

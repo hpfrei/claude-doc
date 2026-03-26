@@ -1,0 +1,6 @@
+{
+  "name": "File Tools",
+  "description": "Read, write, list, and search files in a configurable directory.",
+  "icon": "📁",
+  "extraDeps": []
+}

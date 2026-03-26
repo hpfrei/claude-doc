@@ -1,9 +1,11 @@
 const { spawn } = require('child_process');
 const fs = require('fs');
+const path = require('path');
+const os = require('os');
 const caps = require('./capabilities');
 
 class ClaudeSession {
-  constructor(proxyPort, broadcaster, store) {
+  constructor(proxyPort, broadcaster, store, opts = {}) {
     this.proxyPort = proxyPort;
     this.broadcaster = broadcaster;
     this.store = store;
@@ -13,6 +15,9 @@ class ClaudeSession {
     this.sessionId = null;
     this.ready = false;
     this.capabilities = caps.loadActiveProfile(process.cwd());
+    this._mcpConfigFile = null; // temp file for --mcp-config
+    this._authToken = opts.authToken || '';
+    this._dashboardPort = opts.dashboardPort || 3457;
   }
 
   setReady() {
@@ -60,6 +65,61 @@ class ClaudeSession {
       cwd: this.cwd,
       capabilities: this.capabilities,
     });
+  }
+
+  _cleanupMcpConfig() {
+    if (this._mcpConfigFile) {
+      try { fs.unlinkSync(this._mcpConfigFile); } catch {}
+      this._mcpConfigFile = null;
+    }
+  }
+
+  /**
+   * Build a temp MCP config file for selected servers.
+   * Returns the file path, or null if no servers selected.
+   */
+  _buildMcpConfig(serverSlugs) {
+    if (!serverSlugs || serverSlugs.length === 0) return null;
+
+    let mcpServers;
+    try {
+      mcpServers = require('./mcp/servers');
+    } catch { return null; }
+
+    const appRoot = path.dirname(__dirname);
+    const bridgePath = path.join(appRoot, 'lib', 'mcp-bridge.js');
+    const config = { mcpServers: {} };
+
+    for (const slug of serverSlugs) {
+      const meta = mcpServers.loadServer(slug);
+      if (!meta) continue;
+
+      // Build env from server's environment variables
+      const env = {};
+      if (Array.isArray(meta.env)) {
+        for (const e of meta.env) {
+          if (e.name && e.value !== undefined) env[e.name] = String(e.value);
+        }
+      }
+      // Inject dashboard connection info for the bridge
+      env.CLAUDE_DOC_DASHBOARD_PORT = String(this._dashboardPort || process.env.DASHBOARD_PORT || '3457');
+      env.CLAUDE_DOC_AUTH_TOKEN = String(this._authToken || process.env.AUTH_TOKEN || '');
+      env.CLAUDE_DOC_SERVER_SLUG = slug;
+
+      config.mcpServers[slug] = {
+        command: 'node',
+        args: [bridgePath, slug],
+        env,
+      };
+    }
+
+    if (Object.keys(config.mcpServers).length === 0) return null;
+
+    // Write to temp file
+    const tmpFile = path.join(os.tmpdir(), `claude-doc-mcp-${Date.now()}-${process.pid}.json`);
+    fs.writeFileSync(tmpFile, JSON.stringify(config, null, 2));
+    this._mcpConfigFile = tmpFile;
+    return tmpFile;
   }
 
   send(prompt) {
@@ -111,6 +171,13 @@ class ClaudeSession {
     }
     if (c.systemPrompt) {
       args.push('--system-prompt', c.systemPrompt);
+    }
+
+    // MCP server config injection
+    this._cleanupMcpConfig();
+    const mcpConfigFile = this._buildMcpConfig(c.mcpServers);
+    if (mcpConfigFile) {
+      args.push('--mcp-config', mcpConfigFile);
     }
 
     this.proc = spawn('claude', args, {
@@ -176,6 +243,7 @@ class ClaudeSession {
         }
         this.buffer = '';
       }
+      this._cleanupMcpConfig();
       this.broadcaster.broadcast({
         type: 'chat:status',
         status: 'idle',
@@ -199,6 +267,7 @@ class ClaudeSession {
       this.proc.kill('SIGTERM');
       this.proc = null;
     }
+    this._cleanupMcpConfig();
   }
 
   clearSession() {

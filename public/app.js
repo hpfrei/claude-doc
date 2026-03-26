@@ -23,6 +23,14 @@ const state = {
   activeSessionId: null,
 };
 
+// --- Expose API for modules (mcp.js etc.) ---
+window.dashboard = {
+  state,
+  sendWs(msg) { if (state.ws) state.ws.send(JSON.stringify(msg)); },
+  escHtml,
+  highlightJSON: typeof highlightJSON !== 'undefined' ? highlightJSON : undefined,
+};
+
 // --- DOM refs ---
 const timelineList = document.getElementById('timeline-list');
 const detailContent = document.getElementById('detail-content');
@@ -295,6 +303,11 @@ function handleMessage(msg) {
       state.profiles = msg.profiles || [];
       renderCapabilitiesToolbar();
       renderChatProfileSelect();
+      break;
+    default:
+      // Track MCP servers in state for use by profile modal
+      if (msg.type === 'mcp:list') state.mcpServers = msg.servers || [];
+      if (window.mcpModule?.handleMessage) window.mcpModule.handleMessage(msg);
       break;
   }
 }
@@ -987,8 +1000,7 @@ function escapeHtml(str) {
 function highlightJSON(obj) {
   const json = JSON.stringify(obj, null, 2);
   if (!json) return '';
-  return json
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  return escapeHtml(json)
     .replace(/"([^"\\]*(?:\\.[^"\\]*)*)"\s*:/g, '<span class="json-key">"$1"</span>:')
     .replace(/:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/g, ': <span class="json-string">"$1"</span>')
     .replace(/:\s*(true|false)/g, ': <span class="json-bool">$1</span>')
@@ -1352,6 +1364,7 @@ function updateChatSettings(msg) {
   if (msg.knownSkills) state.knownSkills = msg.knownSkills;
   if (msg.hookEvents) state.hookEvents = msg.hookEvents;
   if (msg.matcherEvents) state.matcherEvents = msg.matcherEvents;
+  if (msg.mcpServers) state.mcpServers = msg.mcpServers;
   if (msg.capabilities) {
     state.capabilities = msg.capabilities;
     state.activeProfileName = msg.capabilities.name;
@@ -1636,6 +1649,8 @@ function renderCapabilitiesToolbar() {
     const disabledCount = c.disabledTools?.length || 0;
     if (disabledCount > 0) parts.push(`${disabledCount} tools off`);
     if (c.disableSlashCommands) parts.push('skills off');
+    const mcpCount = c.mcpServers?.length || 0;
+    if (mcpCount > 0) parts.push(`${mcpCount} MCP`);
     summary.textContent = parts.length > 0 ? parts.join(' \u00b7 ') : 'defaults';
   }
 
@@ -1657,6 +1672,8 @@ function updateCapabilityStats() {
   if (agentCountEl) agentCountEl.textContent = state.agents.length;
   const hookCountEl = document.getElementById('capHookCount');
   if (hookCountEl) hookCountEl.textContent = state.hooks.length;
+  const mcpCountEl = document.getElementById('capMcpCount');
+  if (mcpCountEl) mcpCountEl.textContent = state.mcpServers?.length || 0;
 }
 
 // Profile selector (Capabilities tab)
@@ -1706,6 +1723,29 @@ function openProfileModal(profile, mode) {
     grid.appendChild(item);
   }
 
+  // MCP server checkbox grid
+  const mcpGrid = document.getElementById('pmMcpGrid');
+  if (mcpGrid) {
+    const available = state.mcpServers || [];
+    if (available.length === 0) {
+      mcpGrid.innerHTML = '<span class="cap-modal-hint">No MCP servers created yet.</span>';
+    } else {
+      mcpGrid.innerHTML = '';
+      const selected = new Set(profile.mcpServers || []);
+      for (const srv of available) {
+        const item = document.createElement('label');
+        item.className = 'pm-tool-item';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = selected.has(srv.slug);
+        cb.dataset.slug = srv.slug;
+        item.appendChild(cb);
+        item.appendChild(document.createTextNode(' ' + (srv.icon || '') + ' ' + (srv.name || srv.slug)));
+        mcpGrid.appendChild(item);
+      }
+    }
+  }
+
   document.getElementById('profileModal')?.classList.remove('hidden');
 }
 
@@ -1718,7 +1758,7 @@ document.getElementById('capNewProfile')?.addEventListener('click', () => {
   openProfileModal({
     name: '', label: '', description: '', builtin: false,
     model: null, effort: null, permissionMode: 'default',
-    disabledTools: [], disableSlashCommands: false,
+    disabledTools: [], mcpServers: [], disableSlashCommands: false,
     maxTurns: null, maxBudgetUsd: null, appendSystemPrompt: null, systemPrompt: null,
   }, 'new');
 });
@@ -1761,6 +1801,12 @@ document.getElementById('pmSave')?.addEventListener('click', () => {
     if (!cb.checked) disabledTools.push(cb.dataset.tool);
   });
 
+  // Collect selected MCP servers
+  const mcpServers = [];
+  document.querySelectorAll('#pmMcpGrid input[type="checkbox"]').forEach(cb => {
+    if (cb.checked) mcpServers.push(cb.dataset.slug);
+  });
+
   const maxT = parseInt(document.getElementById('pmMaxTurns')?.value);
   const maxB = parseFloat(document.getElementById('pmMaxBudget')?.value);
 
@@ -1773,6 +1819,7 @@ document.getElementById('pmSave')?.addEventListener('click', () => {
     effort: document.getElementById('pmEffort')?.value || null,
     permissionMode: document.getElementById('pmPermission')?.value || 'default',
     disabledTools,
+    mcpServers,
     disableSlashCommands: !document.getElementById('pmSlash')?.checked,
     maxTurns: maxT > 0 ? maxT : null,
     maxBudgetUsd: maxB > 0 ? maxB : null,

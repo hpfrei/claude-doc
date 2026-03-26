@@ -1,0 +1,6 @@
+{
+  "name": "REST API Wrapper",
+  "description": "HTTP client with configurable base URL. Tools for GET, POST, PUT, DELETE requests.",
+  "icon": "🌐",
+  "extraDeps": []
+}

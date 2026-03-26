@@ -1,0 +1,6 @@
+{
+  "name": "Blank",
+  "description": "Empty server with one example hello tool. Starting point for anything.",
+  "icon": "🔧",
+  "extraDeps": []
+}
