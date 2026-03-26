@@ -21,7 +21,7 @@
       <nav class="header-tabs" id="headerTabs">
         <button class="header-tab" data-view="dashboard">Inspector</button>
         <button class="header-tab active" data-view="claude">Claude</button>
-        <button class="header-tab" data-view="reference">Reference</button>
+        <button class="header-tab" data-view="capabilities">Capabilities</button>
       </nav>
     </div>
     <div class="header-center">
@@ -185,22 +185,46 @@
   </div>
 
   <!-- ===== REFERENCE VIEW ===== -->
-  <div id="view-reference" class="hidden">
+  <div id="view-capabilities" class="hidden">
     <div class="ref-container">
+
+      <!-- Capability toolbar -->
+      <div class="cap-toolbar">
+        <div class="cap-toolbar-row">
+          <label class="cap-field">Model:
+            <select id="capModel"><option value="">default</option><option value="sonnet">sonnet</option><option value="opus">opus</option><option value="haiku">haiku</option></select>
+          </label>
+          <label class="cap-field">Preset:
+            <select id="capPreset"></select>
+          </label>
+          <label class="cap-field">Max turns:
+            <input type="number" id="capMaxTurns" min="1" max="999" placeholder="--" style="width:50px">
+          </label>
+          <label class="cap-field cap-check-field"><input type="checkbox" id="capSlash" checked> Slash commands</label>
+        </div>
+        <div class="cap-toolbar-row">
+          <span class="cap-info">Capabilities = WHICH tools Claude can use. Permission mode (Claude tab) = HOW.</span>
+          <span class="cap-toolbar-actions">
+            <button class="cap-apply-btn hidden" id="capApply">Apply</button>
+            <button class="cap-reset-btn hidden" id="capReset">Reset</button>
+          </span>
+        </div>
+      </div>
 
       <!-- Stats bar -->
       <div class="ref-stats">
-        <div class="ref-stat"><span class="ref-stat-value">25</span><span class="ref-stat-label">Tools</span></div>
-        <div class="ref-stat"><span class="ref-stat-value">6</span><span class="ref-stat-label">Skills</span></div>
-        <div class="ref-stat"><span class="ref-stat-value">5</span><span class="ref-stat-label">Hook Types</span></div>
-        <div class="ref-stat"><span class="ref-stat-value">80+</span><span class="ref-stat-label">Parameters</span></div>
+        <div class="ref-stat"><span class="ref-stat-value" id="capToolCount">25/25</span><span class="ref-stat-label">Tools</span></div>
+        <div class="ref-stat"><span class="ref-stat-value" id="capCommandCount">0</span><span class="ref-stat-label">Commands</span></div>
+        <div class="ref-stat"><span class="ref-stat-value" id="capAgentCount">0</span><span class="ref-stat-label">Agents</span></div>
+        <div class="ref-stat"><span class="ref-stat-value" id="capHookCount">0</span><span class="ref-stat-label">Hooks</span></div>
       </div>
 
       <!-- Section tabs -->
       <div class="ref-nav" id="refNav">
-        <button class="ref-nav-btn active" data-section="tools">Tools <span class="ref-btn-count">(25)</span></button>
-        <button class="ref-nav-btn" data-section="skills">Skills <span class="ref-btn-count">(6)</span></button>
-        <button class="ref-nav-btn" data-section="hooks">Hooks <span class="ref-btn-count">(5)</span></button>
+        <button class="ref-nav-btn active" data-section="tools">Tools</button>
+        <button class="ref-nav-btn" data-section="commands">Commands</button>
+        <button class="ref-nav-btn" data-section="agents">Agents</button>
+        <button class="ref-nav-btn" data-section="hooks">Hooks</button>
       </div>
 
       <!-- ===================== TOOLS ===================== -->
@@ -728,135 +752,65 @@
 
       </div><!-- /ref-tools -->
 
-      <!-- ===================== SKILLS ===================== -->
-      <div class="ref-panel" id="ref-skills">
-
-        <div class="ref-intro">
-          <strong>Skills</strong> are specialized prompts invoked via slash commands (e.g. <code>/simplify</code>) or triggered automatically when the context matches. They are executed through the <code>Skill</code> tool and expand into full, domain-specific prompts.
+      <!-- ===================== COMMANDS ===================== -->
+      <div class="ref-panel" id="ref-commands">
+        <div class="cap-section-header">
+          <span>Custom slash commands stored in <code>.claude/commands/</code></span>
+          <button class="cap-new-btn" id="capNewCommand">+ New Command</button>
         </div>
-
-        <div class="ref-grid">
-
-          <div class="ref-card">
-            <div class="ref-card-header" onclick="toggleRef(this)">
-              <span><span class="ref-name">/update-config</span> <span class="ref-tag tag-sk">skill</span></span>
-              <span class="ref-brief">Configure settings, hooks, permissions, and env vars</span>
-              <span class="ref-chevron">&#9654;</span>
-            </div>
-            <div class="ref-card-body">
-              <h4>Description</h4>
-              <p>Configures the Claude Code harness via <code>settings.json</code>. The go-to skill for hooks, permissions, env vars, and settings file modifications.</p>
-              <h4>When Triggered</h4>
-              <ul>
-                <li>"from now on when X", "each time X", "whenever X", "before/after X"</li>
-                <li>"allow npm commands", "add bq permission", "move permission to user settings"</li>
-                <li>"set DEBUG=true"</li>
-                <li>Hook troubleshooting and settings.json changes</li>
-              </ul>
-              <h4>Key Detail</h4>
-              <p>Automated behaviors require <strong>hooks</strong> in settings.json &mdash; the harness executes these, not Claude's memory.</p>
-            </div>
+        <div class="cap-list" id="capCommandList"></div>
+        <div class="cap-editor hidden" id="capCommandEditor">
+          <textarea id="capCommandTextarea" spellcheck="false"></textarea>
+          <div class="cap-editor-actions">
+            <button class="cap-save-btn" id="capCommandSave">Save</button>
+            <button class="cap-cancel-btn" id="capCommandCancel">Cancel</button>
           </div>
-
-          <div class="ref-card">
-            <div class="ref-card-header" onclick="toggleRef(this)">
-              <span><span class="ref-name">/keybindings-help</span> <span class="ref-tag tag-sk">skill</span></span>
-              <span class="ref-brief">Customize keyboard shortcuts and keybindings</span>
-              <span class="ref-chevron">&#9654;</span>
-            </div>
-            <div class="ref-card-body">
-              <h4>Description</h4>
-              <p>Manages <code>~/.claude/keybindings.json</code>. Supports rebinding keys, chord (multi-key) shortcuts, and modifying existing bindings.</p>
-              <h4>When Triggered</h4>
-              <ul><li>"rebind ctrl+s"</li><li>"add a chord shortcut"</li><li>"change the submit key"</li><li>"customize keybindings"</li></ul>
-            </div>
-          </div>
-
-          <div class="ref-card">
-            <div class="ref-card-header" onclick="toggleRef(this)">
-              <span><span class="ref-name">/simplify</span> <span class="ref-tag tag-sk">skill</span></span>
-              <span class="ref-brief">Review changed code for reuse, quality, and efficiency</span>
-              <span class="ref-chevron">&#9654;</span>
-            </div>
-            <div class="ref-card-body">
-              <h4>Description</h4>
-              <p>Reviews recently changed code. Checks for reuse opportunities, quality issues, and efficiency concerns. Auto-applies fixes.</p>
-              <h4>What It Checks</h4>
-              <ul>
-                <li><strong>Reuse</strong> &mdash; Existing utilities the new code could leverage</li>
-                <li><strong>Quality</strong> &mdash; Conventions, anti-patterns, dead code, complexity</li>
-                <li><strong>Efficiency</strong> &mdash; Performance, redundant ops, unnecessary allocations</li>
-              </ul>
-            </div>
-          </div>
-
-          <div class="ref-card">
-            <div class="ref-card-header" onclick="toggleRef(this)">
-              <span><span class="ref-name">/loop</span> <span class="ref-tag tag-sk">skill</span></span>
-              <span class="ref-brief">Run a prompt or slash command on a recurring interval</span>
-              <span class="ref-chevron">&#9654;</span>
-            </div>
-            <div class="ref-card-body">
-              <h4>Description</h4>
-              <p>Sets up recurring execution of a prompt or command. Default interval: 10m.</p>
-              <h4>Syntax</h4>
-              <pre class="ref-pre">/loop [interval] [command or prompt]</pre>
-              <h4>Examples</h4>
-              <pre class="ref-pre">/loop 5m check if CI passed
-/loop 10m /simplify
-/loop 30s check build status</pre>
-              <p>For <strong>recurring</strong> tasks only. Do not invoke for one-offs.</p>
-            </div>
-          </div>
-
-          <div class="ref-card">
-            <div class="ref-card-header" onclick="toggleRef(this)">
-              <span><span class="ref-name">/schedule</span> <span class="ref-tag tag-sk">skill</span></span>
-              <span class="ref-brief">Manage scheduled remote agents (triggers) on a cron schedule</span>
-              <span class="ref-chevron">&#9654;</span>
-            </div>
-            <div class="ref-card-body">
-              <h4>Description</h4>
-              <p>Creates, updates, lists, or runs remote triggers via the claude.ai API. Unlike <code>/loop</code> (session-scoped), these persist across sessions.</p>
-              <h4>Capabilities</h4>
-              <ul>
-                <li><strong>Create</strong> &mdash; New trigger with cron schedule and prompt</li>
-                <li><strong>List</strong> &mdash; View all triggers</li>
-                <li><strong>Update</strong> &mdash; Modify schedule or prompt</li>
-                <li><strong>Run</strong> &mdash; Execute immediately</li>
-              </ul>
-            </div>
-          </div>
-
-          <div class="ref-card">
-            <div class="ref-card-header" onclick="toggleRef(this)">
-              <span><span class="ref-name">/claude-api</span> <span class="ref-tag tag-sk">skill</span></span>
-              <span class="ref-brief">Build apps with the Claude API, Anthropic SDK, or Agent SDK</span>
-              <span class="ref-chevron">&#9654;</span>
-            </div>
-            <div class="ref-card-body">
-              <h4>Description</h4>
-              <p>Specialized guidance for Claude API, Anthropic SDKs, and Agent SDK integration. Covers tool use, streaming, and SDK best practices.</p>
-              <h4>When Triggered</h4>
-              <ul>
-                <li>Imports <code>anthropic</code>, <code>@anthropic-ai/sdk</code>, or <code>claude_agent_sdk</code></li>
-                <li>User asks about Claude API or Anthropic SDKs</li>
-              </ul>
-              <h4>NOT Triggered For</h4>
-              <ul><li>Other AI SDKs (openai, etc.)</li><li>General programming / ML tasks</li></ul>
-            </div>
-          </div>
-
         </div>
-      </div><!-- /ref-skills -->
+      </div><!-- /ref-commands -->
+
+      <!-- ===================== AGENTS ===================== -->
+      <div class="ref-panel" id="ref-agents">
+        <div class="cap-section-header">
+          <span>Custom agents stored in <code>.claude/agents/</code></span>
+          <button class="cap-new-btn" id="capNewAgent">+ New Agent</button>
+        </div>
+        <div class="cap-list" id="capAgentList"></div>
+        <div class="cap-editor hidden" id="capAgentEditor">
+          <textarea id="capAgentTextarea" spellcheck="false"></textarea>
+          <div class="cap-editor-actions">
+            <button class="cap-save-btn" id="capAgentSave">Save</button>
+            <button class="cap-cancel-btn" id="capAgentCancel">Cancel</button>
+          </div>
+        </div>
+      </div><!-- /ref-agents -->
 
       <!-- ===================== HOOKS ===================== -->
       <div class="ref-panel" id="ref-hooks">
 
-        <div class="ref-intro">
+        <div class="cap-section-header">
+          <span>Lifecycle hooks in <code>.claude/settings.local.json</code></span>
+          <button class="cap-new-btn" id="capNewHook">+ New Hook</button>
+        </div>
+        <div class="cap-list" id="capHookList"></div>
+        <div class="cap-form hidden" id="capHookEditor">
+          <div class="cap-form-row">
+            <label>Event: <select id="capHookEvent"></select></label>
+            <label class="cap-hook-matcher-label">Matcher: <input type="text" id="capHookMatcher" placeholder="Write|Edit"></label>
+          </div>
+          <div class="cap-form-row">
+            <label>Type: <select id="capHookType"><option value="command">command</option><option value="prompt">prompt</option></select></label>
+            <label>Timeout: <input type="number" id="capHookTimeout" value="30" min="1" max="300" style="width:50px"> sec</label>
+          </div>
+          <textarea id="capHookCommand" placeholder="Shell command or prompt..." spellcheck="false" rows="3"></textarea>
+          <div class="cap-editor-actions">
+            <button class="cap-save-btn" id="capHookSave">Save</button>
+            <button class="cap-cancel-btn" id="capHookCancel">Cancel</button>
+          </div>
+        </div>
+
+        <div class="ref-intro" style="margin-top:1.5rem">
           <strong>Hooks</strong> are user-configured shell commands that execute automatically in response to Claude Code lifecycle events.
-          Defined in <code>settings.json</code> (project, user, or global scope), they are run by the harness &mdash; not by Claude.
-          Use <code>/update-config</code> to set them up.
+          Defined in <code>settings.json</code>, they are run by the harness &mdash; not by Claude.
         </div>
 
         <!-- Lifecycle -->
@@ -1019,7 +973,7 @@
       </div><!-- /ref-hooks -->
 
     </div><!-- /ref-container -->
-  </div><!-- /view-reference -->
+  </div><!-- /view-capabilities -->
 
   <footer>
     <span id="stats">0 requests</span>

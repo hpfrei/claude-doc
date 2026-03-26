@@ -958,7 +958,7 @@ footer {
    REFERENCE VIEW
    ============================================================ */
 
-#view-reference {
+#view-capabilities {
   flex: 1;
   overflow-y: auto;
   background: var(--bg);
@@ -1317,6 +1317,286 @@ footer {
 
 .ref-lc-arrow {
   color: var(--text-dim);
+}
+
+/* ============================================================
+   CAPABILITIES TAB
+   ============================================================ */
+
+.cap-toolbar {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 16px;
+  margin-bottom: 16px;
+}
+
+.cap-toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.cap-toolbar-row + .cap-toolbar-row {
+  margin-top: 8px;
+}
+
+.cap-field {
+  font-size: 11px;
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cap-field select, .cap-field input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 4px;
+  padding: 3px 6px;
+  font-size: 11px;
+  font-family: inherit;
+}
+
+.cap-check-field {
+  gap: 4px;
+}
+
+.cap-check-field input[type="checkbox"] {
+  margin: 0;
+}
+
+.cap-info {
+  font-size: 10px;
+  color: var(--text-dim);
+  flex: 1;
+}
+
+.cap-toolbar-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.cap-apply-btn, .cap-reset-btn {
+  font-size: 11px;
+  padding: 4px 12px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.cap-apply-btn {
+  background: var(--cyan);
+  color: var(--bg);
+  border-color: var(--cyan);
+  font-weight: 600;
+}
+.cap-apply-btn:hover { opacity: 0.85; }
+
+.cap-reset-btn {
+  background: var(--bg);
+  color: var(--text-dim);
+}
+.cap-reset-btn:hover { color: var(--text); }
+
+/* Tool card checkbox */
+.ref-card-check {
+  margin-right: 8px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.ref-card.disabled {
+  opacity: 0.4;
+}
+
+.ref-card.disabled .ref-card-header {
+  opacity: 1;
+}
+
+/* Section header for commands/agents/hooks */
+.cap-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.cap-section-header code {
+  font-size: 11px;
+  color: var(--cyan);
+}
+
+.cap-new-btn {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+  font-family: inherit;
+}
+.cap-new-btn:hover { border-color: var(--cyan); color: var(--cyan); }
+
+/* Item list */
+.cap-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cap-list-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.cap-item-name {
+  font-weight: 600;
+  color: var(--text-bright);
+  white-space: nowrap;
+}
+
+.cap-item-desc {
+  flex: 1;
+  color: var(--text-dim);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cap-list-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.cap-edit-btn, .cap-del-btn {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 12px;
+  line-height: 1;
+}
+.cap-edit-btn:hover { color: var(--cyan); border-color: var(--cyan); }
+.cap-del-btn:hover { color: var(--red); border-color: var(--red); }
+
+/* Editor (commands + agents) */
+.cap-editor {
+  margin-top: 10px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px;
+}
+
+.cap-editor textarea {
+  width: 100%;
+  min-height: 220px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  padding: 10px;
+  border-radius: 4px;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.cap-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.cap-save-btn, .cap-cancel-btn {
+  font-size: 11px;
+  padding: 4px 14px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.cap-save-btn {
+  background: var(--green);
+  color: var(--bg);
+  border-color: var(--green);
+  font-weight: 600;
+}
+.cap-save-btn:hover { opacity: 0.85; }
+
+.cap-cancel-btn {
+  background: var(--bg);
+  color: var(--text-dim);
+}
+.cap-cancel-btn:hover { color: var(--text); }
+
+/* Hook form */
+.cap-form {
+  margin-top: 10px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px;
+}
+
+.cap-form-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.cap-form-row label {
+  font-size: 11px;
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cap-form-row select,
+.cap-form-row input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 4px;
+  padding: 3px 6px;
+  font-size: 11px;
+  font-family: inherit;
+}
+
+.cap-form textarea {
+  width: 100%;
+  min-height: 60px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  padding: 8px;
+  border-radius: 4px;
+  resize: vertical;
+  box-sizing: border-box;
 }
 
 /* ============================================================

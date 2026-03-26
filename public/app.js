@@ -278,6 +278,19 @@ function handleMessage(msg) {
     case 'ask:timeout':
       markQuestionTimeout(msg.toolUseId);
       break;
+
+    case 'command:list':
+      state.commands = msg.commands || [];
+      renderCommandsPanel();
+      break;
+    case 'agent:list':
+      state.agents = msg.agents || [];
+      renderAgentsPanel();
+      break;
+    case 'hook:list':
+      state.hooks = msg.hooks || [];
+      renderHooksPanel();
+      break;
   }
 }
 
@@ -1054,7 +1067,7 @@ document.getElementById('headerTabs').addEventListener('click', e => {
   document.querySelectorAll('.header-tab').forEach(t => t.classList.remove('active'));
   tab.classList.add('active');
 
-  const views = ['view-dashboard', 'view-claude', 'view-reference'];
+  const views = ['view-dashboard', 'view-claude', 'view-capabilities'];
   for (const id of views) {
     const el = document.getElementById(id);
     if (!el) continue;
@@ -1324,6 +1337,19 @@ function updateChatSettings(msg) {
       chatPermBtn.querySelector('.chat-perm-comment').textContent = comments[idx];
     }
   }
+  // Capabilities
+  if (msg.presets) state.presets = msg.presets;
+  if (msg.knownTools) state.knownTools = msg.knownTools;
+  if (msg.hookEvents) state.hookEvents = msg.hookEvents;
+  if (msg.matcherEvents) state.matcherEvents = msg.matcherEvents;
+  if (msg.capabilities) {
+    state.capabilities = msg.capabilities;
+    state.capabilitiesDirty = false;
+  }
+  if (msg.capabilities || msg.presets) {
+    renderCapabilitiesToolbar();
+    renderToolCheckboxes();
+  }
 }
 
 // ============================================================
@@ -1473,6 +1499,420 @@ function markQuestionTimeout(toolUseId) {
     notice.textContent = 'Timed out - error forwarded as-is';
     bubble.appendChild(notice);
   }
+}
+
+// ============================================================
+// CAPABILITIES TAB
+// ============================================================
+
+state.capabilities = null;
+state.capabilitiesDirty = false;
+state.capabilitiesServer = null; // last server-confirmed state
+state.presets = [];
+state.knownTools = [];
+state.commands = [];
+state.agents = [];
+state.hooks = [];
+state.hookEvents = [];
+state.matcherEvents = [];
+state.editingCommand = null;
+state.editingAgent = null;
+state.editingHook = null;
+
+const COMMAND_TEMPLATE = `---
+name: my-command
+description: What this command does
+argument-hint: [optional-args]
+---
+
+Your prompt here. Use $ARGUMENTS for user input.`;
+
+const AGENT_TEMPLATE = `---
+name: my-agent
+description: |
+  Use this agent when [describe trigger conditions].
+model: sonnet
+tools: [Read, Glob, Grep, Bash]
+---
+
+You are an expert at [role]. Your task is to [description].`;
+
+// --- Toolbar ---
+
+function renderCapabilitiesToolbar() {
+  const c = state.capabilities;
+  if (!c) return;
+
+  const modelSel = document.getElementById('capModel');
+  const presetSel = document.getElementById('capPreset');
+  const maxInput = document.getElementById('capMaxTurns');
+  const slashCheck = document.getElementById('capSlash');
+  const applyBtn = document.getElementById('capApply');
+  const resetBtn = document.getElementById('capReset');
+
+  if (modelSel) modelSel.value = c.model || '';
+  if (maxInput) maxInput.value = c.maxTurns || '';
+  if (slashCheck) slashCheck.checked = !c.disableSlashCommands;
+
+  // Populate preset dropdown
+  if (presetSel && state.presets.length > 0) {
+    presetSel.innerHTML = '';
+    for (const p of state.presets) {
+      const opt = document.createElement('option');
+      opt.value = p.name;
+      opt.textContent = p.label;
+      opt.title = p.description;
+      presetSel.appendChild(opt);
+    }
+    const customOpt = document.createElement('option');
+    customOpt.value = 'custom';
+    customOpt.textContent = 'Custom';
+    presetSel.appendChild(customOpt);
+    presetSel.value = c.name || 'custom';
+  }
+
+  if (applyBtn) applyBtn.classList.toggle('hidden', !state.capabilitiesDirty);
+  if (resetBtn) resetBtn.classList.toggle('hidden', !state.capabilitiesDirty);
+
+  // Update stats
+  const enabled = state.knownTools.length - (c.disabledTools?.length || 0);
+  const countEl = document.getElementById('capToolCount');
+  if (countEl) countEl.textContent = `${enabled}/${state.knownTools.length}`;
+  const cmdCountEl = document.getElementById('capCommandCount');
+  if (cmdCountEl) cmdCountEl.textContent = state.commands.length;
+  const agentCountEl = document.getElementById('capAgentCount');
+  if (agentCountEl) agentCountEl.textContent = state.agents.length;
+  const hookCountEl = document.getElementById('capHookCount');
+  if (hookCountEl) hookCountEl.textContent = state.hooks.length;
+
+  // Save server state for reset
+  if (!state.capabilitiesDirty) {
+    state.capabilitiesServer = JSON.parse(JSON.stringify(c));
+  }
+}
+
+function markCapDirty() {
+  state.capabilitiesDirty = true;
+  // Auto-set preset to 'custom'
+  const presetSel = document.getElementById('capPreset');
+  if (presetSel) presetSel.value = 'custom';
+  if (state.capabilities) state.capabilities.name = 'custom';
+  document.getElementById('capApply')?.classList.remove('hidden');
+  document.getElementById('capReset')?.classList.remove('hidden');
+  // Update tool count
+  const enabled = state.knownTools.length - (state.capabilities?.disabledTools?.length || 0);
+  const countEl = document.getElementById('capToolCount');
+  if (countEl) countEl.textContent = `${enabled}/${state.knownTools.length}`;
+}
+
+// Toolbar event listeners
+document.getElementById('capModel')?.addEventListener('change', (e) => {
+  if (!state.capabilities) return;
+  state.capabilities.model = e.target.value || null;
+  markCapDirty();
+});
+
+document.getElementById('capMaxTurns')?.addEventListener('change', (e) => {
+  if (!state.capabilities) return;
+  const v = parseInt(e.target.value);
+  state.capabilities.maxTurns = v > 0 ? v : null;
+  markCapDirty();
+});
+
+document.getElementById('capSlash')?.addEventListener('change', (e) => {
+  if (!state.capabilities) return;
+  state.capabilities.disableSlashCommands = !e.target.checked;
+  markCapDirty();
+});
+
+document.getElementById('capPreset')?.addEventListener('change', (e) => {
+  const name = e.target.value;
+  if (name === 'custom') return;
+  ws?.send(JSON.stringify({ type: 'chat:loadPreset', preset: name }));
+});
+
+document.getElementById('capApply')?.addEventListener('click', () => {
+  if (!state.capabilities) return;
+  ws?.send(JSON.stringify({ type: 'chat:setCapabilities', capabilities: state.capabilities }));
+});
+
+document.getElementById('capReset')?.addEventListener('click', () => {
+  if (state.capabilitiesServer) {
+    state.capabilities = JSON.parse(JSON.stringify(state.capabilitiesServer));
+    state.capabilitiesDirty = false;
+    renderCapabilitiesToolbar();
+    renderToolCheckboxes();
+  }
+});
+
+// --- Tool Checkboxes ---
+
+function renderToolCheckboxes() {
+  const c = state.capabilities;
+  if (!c) return;
+  const disabled = new Set(c.disabledTools || []);
+
+  document.querySelectorAll('#ref-tools .ref-card').forEach(card => {
+    const nameEl = card.querySelector('.ref-name');
+    if (!nameEl) return;
+    const toolName = nameEl.textContent.trim();
+    if (!state.knownTools.includes(toolName)) return;
+
+    // Add checkbox if not already present
+    let cb = card.querySelector('.ref-card-check');
+    if (!cb) {
+      cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.className = 'ref-card-check';
+      cb.addEventListener('click', (e) => e.stopPropagation());
+      cb.addEventListener('change', (e) => {
+        const name = e.target.closest('.ref-card').querySelector('.ref-name').textContent.trim();
+        if (!state.capabilities) return;
+        if (e.target.checked) {
+          state.capabilities.disabledTools = state.capabilities.disabledTools.filter(t => t !== name);
+        } else {
+          if (!state.capabilities.disabledTools.includes(name)) {
+            state.capabilities.disabledTools.push(name);
+          }
+        }
+        e.target.closest('.ref-card').classList.toggle('disabled', !e.target.checked);
+        markCapDirty();
+      });
+      const header = card.querySelector('.ref-card-header');
+      header.insertBefore(cb, header.firstChild);
+    }
+    cb.checked = !disabled.has(toolName);
+    card.classList.toggle('disabled', disabled.has(toolName));
+  });
+}
+
+// --- Commands Panel ---
+
+function renderCommandsPanel() {
+  const list = document.getElementById('capCommandList');
+  if (!list) return;
+  list.innerHTML = '';
+  for (const cmd of state.commands) {
+    const item = document.createElement('div');
+    item.className = 'cap-list-item';
+    item.innerHTML = `<span class="cap-item-name">/${cmd.name}</span>
+      <span class="cap-item-desc">${escHtml(cmd.description)}</span>
+      <span class="cap-list-actions">
+        <button class="cap-edit-btn" data-name="${cmd.name}" data-kind="command" title="Edit">&#9998;</button>
+        <button class="cap-del-btn" data-name="${cmd.name}" data-kind="command" title="Delete">&#10005;</button>
+      </span>`;
+    list.appendChild(item);
+  }
+}
+
+document.getElementById('capNewCommand')?.addEventListener('click', () => {
+  state.editingCommand = '__new__';
+  const ta = document.getElementById('capCommandTextarea');
+  if (ta) ta.value = COMMAND_TEMPLATE;
+  document.getElementById('capCommandEditor')?.classList.remove('hidden');
+});
+
+document.getElementById('capCommandSave')?.addEventListener('click', () => {
+  const ta = document.getElementById('capCommandTextarea');
+  if (!ta) return;
+  const content = ta.value;
+  const nameMatch = content.match(/^name:\s*(.+)$/m);
+  const name = nameMatch ? nameMatch[1].trim() : null;
+  if (!name) return alert('Missing "name:" in frontmatter');
+  ws?.send(JSON.stringify({ type: 'command:save', name, content }));
+  document.getElementById('capCommandEditor')?.classList.add('hidden');
+  state.editingCommand = null;
+});
+
+document.getElementById('capCommandCancel')?.addEventListener('click', () => {
+  document.getElementById('capCommandEditor')?.classList.add('hidden');
+  state.editingCommand = null;
+});
+
+// --- Agents Panel ---
+
+function renderAgentsPanel() {
+  const list = document.getElementById('capAgentList');
+  if (!list) return;
+  list.innerHTML = '';
+  for (const agent of state.agents) {
+    const item = document.createElement('div');
+    item.className = 'cap-list-item';
+    item.innerHTML = `<span class="cap-item-name">${escHtml(agent.name)}</span>
+      <span class="cap-item-desc">${escHtml(agent.description)}</span>
+      <span class="cap-list-actions">
+        <button class="cap-edit-btn" data-name="${agent.name}" data-kind="agent" title="Edit">&#9998;</button>
+        <button class="cap-del-btn" data-name="${agent.name}" data-kind="agent" title="Delete">&#10005;</button>
+      </span>`;
+    list.appendChild(item);
+  }
+}
+
+document.getElementById('capNewAgent')?.addEventListener('click', () => {
+  state.editingAgent = '__new__';
+  const ta = document.getElementById('capAgentTextarea');
+  if (ta) ta.value = AGENT_TEMPLATE;
+  document.getElementById('capAgentEditor')?.classList.remove('hidden');
+});
+
+document.getElementById('capAgentSave')?.addEventListener('click', () => {
+  const ta = document.getElementById('capAgentTextarea');
+  if (!ta) return;
+  const content = ta.value;
+  const nameMatch = content.match(/^name:\s*(.+)$/m);
+  const name = nameMatch ? nameMatch[1].trim() : null;
+  if (!name) return alert('Missing "name:" in frontmatter');
+  ws?.send(JSON.stringify({ type: 'agent:save', name, content }));
+  document.getElementById('capAgentEditor')?.classList.add('hidden');
+  state.editingAgent = null;
+});
+
+document.getElementById('capAgentCancel')?.addEventListener('click', () => {
+  document.getElementById('capAgentEditor')?.classList.add('hidden');
+  state.editingAgent = null;
+});
+
+// --- Hooks Panel ---
+
+function renderHooksPanel() {
+  const list = document.getElementById('capHookList');
+  if (!list) return;
+  list.innerHTML = '';
+
+  // Populate event dropdown if needed
+  const eventSel = document.getElementById('capHookEvent');
+  if (eventSel && eventSel.options.length === 0 && state.hookEvents.length > 0) {
+    for (const ev of state.hookEvents) {
+      const opt = document.createElement('option');
+      opt.value = ev;
+      opt.textContent = ev;
+      eventSel.appendChild(opt);
+    }
+  }
+
+  for (const hook of state.hooks) {
+    const item = document.createElement('div');
+    item.className = 'cap-list-item';
+    const matcherText = hook.matcher ? ` \u2192 ${hook.matcher}` : '';
+    const cmdPreview = hook.command.length > 40 ? hook.command.slice(0, 40) + '\u2026' : hook.command;
+    item.innerHTML = `<span class="cap-item-name">${escHtml(hook.event)}${escHtml(matcherText)}</span>
+      <span class="cap-item-desc">${escHtml(cmdPreview)}</span>
+      <span class="cap-list-actions">
+        <button class="cap-edit-btn" data-event="${hook.event}" data-entry="${hook.entryIndex}" data-hook="${hook.hookIndex}" data-kind="hook" title="Edit">&#9998;</button>
+        <button class="cap-del-btn" data-event="${hook.event}" data-entry="${hook.entryIndex}" data-kind="hook" title="Delete">&#10005;</button>
+      </span>`;
+    list.appendChild(item);
+  }
+}
+
+document.getElementById('capNewHook')?.addEventListener('click', () => {
+  state.editingHook = '__new__';
+  document.getElementById('capHookEvent').value = state.hookEvents[0] || 'PreToolUse';
+  document.getElementById('capHookMatcher').value = '';
+  document.getElementById('capHookType').value = 'command';
+  document.getElementById('capHookCommand').value = '';
+  document.getElementById('capHookTimeout').value = '30';
+  document.getElementById('capHookEditor')?.classList.remove('hidden');
+  updateHookMatcherVisibility();
+});
+
+document.getElementById('capHookSave')?.addEventListener('click', () => {
+  const hook = {
+    event: document.getElementById('capHookEvent')?.value,
+    matcher: document.getElementById('capHookMatcher')?.value || '',
+    type: document.getElementById('capHookType')?.value || 'command',
+    command: document.getElementById('capHookCommand')?.value || '',
+    timeout: parseInt(document.getElementById('capHookTimeout')?.value) || 30,
+  };
+  if (!hook.command) return alert('Command/prompt is required');
+  // If editing existing, include indices
+  if (state.editingHook && state.editingHook !== '__new__') {
+    hook.entryIndex = state.editingHook.entryIndex;
+    hook.hookIndex = state.editingHook.hookIndex;
+  }
+  ws?.send(JSON.stringify({ type: 'hook:save', hook }));
+  document.getElementById('capHookEditor')?.classList.add('hidden');
+  state.editingHook = null;
+});
+
+document.getElementById('capHookCancel')?.addEventListener('click', () => {
+  document.getElementById('capHookEditor')?.classList.add('hidden');
+  state.editingHook = null;
+});
+
+document.getElementById('capHookEvent')?.addEventListener('change', updateHookMatcherVisibility);
+
+function updateHookMatcherVisibility() {
+  const event = document.getElementById('capHookEvent')?.value;
+  const matcherLabel = document.querySelector('.cap-hook-matcher-label');
+  if (matcherLabel) {
+    matcherLabel.style.display = state.matcherEvents?.includes(event) ? '' : 'none';
+  }
+}
+
+// --- Delegated click handlers for edit/delete buttons ---
+
+document.addEventListener('click', (e) => {
+  const editBtn = e.target.closest('.cap-edit-btn');
+  const delBtn = e.target.closest('.cap-del-btn');
+
+  if (editBtn) {
+    const kind = editBtn.dataset.kind;
+    if (kind === 'command') {
+      const name = editBtn.dataset.name;
+      const cmd = state.commands.find(c => c.name === name);
+      if (cmd) {
+        state.editingCommand = name;
+        document.getElementById('capCommandTextarea').value = cmd.content;
+        document.getElementById('capCommandEditor')?.classList.remove('hidden');
+      }
+    } else if (kind === 'agent') {
+      const name = editBtn.dataset.name;
+      const agent = state.agents.find(a => a.name === name);
+      if (agent) {
+        state.editingAgent = name;
+        document.getElementById('capAgentTextarea').value = agent.content;
+        document.getElementById('capAgentEditor')?.classList.remove('hidden');
+      }
+    } else if (kind === 'hook') {
+      const event = editBtn.dataset.event;
+      const entryIdx = parseInt(editBtn.dataset.entry);
+      const hookData = state.hooks.find(h => h.event === event && h.entryIndex === entryIdx);
+      if (hookData) {
+        state.editingHook = { entryIndex: hookData.entryIndex, hookIndex: hookData.hookIndex };
+        document.getElementById('capHookEvent').value = hookData.event;
+        document.getElementById('capHookMatcher').value = hookData.matcher;
+        document.getElementById('capHookType').value = hookData.type;
+        document.getElementById('capHookCommand').value = hookData.command;
+        document.getElementById('capHookTimeout').value = hookData.timeout;
+        document.getElementById('capHookEditor')?.classList.remove('hidden');
+        updateHookMatcherVisibility();
+      }
+    }
+  }
+
+  if (delBtn) {
+    const kind = delBtn.dataset.kind;
+    if (kind === 'command') {
+      if (confirm(`Delete command /${delBtn.dataset.name}?`)) {
+        ws?.send(JSON.stringify({ type: 'command:delete', name: delBtn.dataset.name }));
+      }
+    } else if (kind === 'agent') {
+      if (confirm(`Delete agent ${delBtn.dataset.name}?`)) {
+        ws?.send(JSON.stringify({ type: 'agent:delete', name: delBtn.dataset.name }));
+      }
+    } else if (kind === 'hook') {
+      if (confirm('Delete this hook?')) {
+        ws?.send(JSON.stringify({ type: 'hook:delete', event: delBtn.dataset.event, entryIndex: parseInt(delBtn.dataset.entry) }));
+      }
+    }
+  }
+});
+
+function escHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
 }
 
 // ============================================================

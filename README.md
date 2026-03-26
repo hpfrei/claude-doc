@@ -51,6 +51,17 @@ Browser ── WS ──>         │                  │
 - **Process control** — stop a running session at any time
 - **Architecture diagram** — the welcome screen shows an interactive SVG diagram of how all the pieces connect
 
+### Capabilities Manager
+
+The Capabilities tab lets you control and extend Claude Code directly from the browser:
+
+- **Tool control** — enable/disable any of the 25 built-in tools via checkboxes. Disabled tools are passed as `--disallowedTools` to the CLI. Presets (Full, Safe, Read-only, Minimal) for quick configuration
+- **Custom commands** — create, edit, and delete slash commands. Stored as `.md` files in `.claude/commands/`, auto-discovered by Claude Code
+- **Custom agents** — create, edit, and delete sub-agents with custom system prompts, model selection, and tool restrictions. Stored in `.claude/agents/`
+- **Hook editor** — create, edit, and delete lifecycle hooks (PreToolUse, PostToolUse, Stop, etc.) via a form-based editor. Stored in `.claude/settings.local.json`
+- **Model selection** — switch between sonnet, opus, haiku, or custom model IDs
+- **Max turns** — cap the agentic loop iteration count
+
 ### Themes
 
 Two built-in themes with a toggle in the header (persisted to localStorage):
@@ -189,10 +200,11 @@ src/
   sse-passthrough.js   Transform stream that taps SSE events without buffering
   claude-session.js    Spawns and manages claude -p subprocess with session resume
   dashboard-ws.js      WebSocket server, broadcasts events to connected dashboards
+  capabilities.js      Tool profiles, command/agent/hook CRUD, preset management
   store.js             In-memory interaction store with disk persistence and session management
   utils.js             Header filtering, ID generation, payload sanitization
 public/
-  index.html           Dashboard UI (Inspector + Claude + Reference tabs)
+  index.html           Dashboard UI (Inspector + Claude + Capabilities tabs)
   login.html           Auth token login page
   app.js               Client-side state management and rendering
   style.css            Layout and structural styles
