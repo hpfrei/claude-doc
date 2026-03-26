@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Claude Code API Proxy Dashboard</title>
-  <link rel="stylesheet" id="themeLink" href="theme-dark.css">
+  <title>claude-doc</title>
+  <link rel="stylesheet" id="themeLink" href="theme-bright.css">
   <link rel="stylesheet" href="style.css">
   <script>
     // Apply saved theme before paint to prevent flash
     (function() {
-      var t = localStorage.getItem('theme') || 'dark';
+      var t = localStorage.getItem('theme') || 'bright';
       document.getElementById('themeLink').href = 'theme-' + t + '.css';
     })();
   </script>
@@ -17,26 +17,30 @@
 <body>
   <header>
     <div class="header-left">
-      <h1>Claude Code</h1>
+      <h1>claude-doc</h1>
       <nav class="header-tabs" id="headerTabs">
-        <button class="header-tab active" data-view="dashboard">Inspector</button>
-        <button class="header-tab" data-view="claude">Claude</button>
+        <button class="header-tab" data-view="dashboard">Inspector</button>
+        <button class="header-tab active" data-view="claude">Claude</button>
         <button class="header-tab" data-view="reference">Reference</button>
       </nav>
     </div>
+    <div class="header-center">
+      <select id="sessionPicker" class="session-picker" title="Select session"></select>
+      <button id="switchSessionBtn" class="session-switch-btn hidden" title="Switch to selected session">Switch</button>
+      <button id="deleteSessionBtn" class="session-del-btn hidden" title="Delete selected session">Del</button>
+      <button id="newSessionBtn" class="session-new-btn" title="New session">+ New</button>
+    </div>
     <div class="header-actions">
       <span id="status" class="status disconnected">disconnected</span>
-      <button id="clearBtn">Clear History</button>
-      <button class="theme-toggle" id="themeToggle" title="Toggle theme">dark</button>
+      <button class="theme-toggle" id="themeToggle" title="Toggle theme">bright</button>
     </div>
   </header>
 
   <!-- ===== DASHBOARD VIEW ===== -->
-  <main id="view-dashboard">
+  <main id="view-dashboard" class="hidden" style="display:none">
     <aside id="timeline">
       <div id="timeline-header">
         <span>Timeline</span>
-        <button id="resetBtn">Reset</button>
       </div>
       <div id="timeline-list"></div>
     </aside>
@@ -50,24 +54,115 @@
   </main>
 
   <!-- ===== CLAUDE VIEW ===== -->
-  <div id="view-claude" class="hidden">
+  <div id="view-claude">
     <div class="chat-container">
       <div class="chat-messages" id="chatMessages">
         <div class="chat-welcome">
-          <p>Send a prompt to Claude through the proxy.</p>
-          <p class="hint">All API calls will appear in the Dashboard tab.</p>
+          <svg class="welcome-diagram" viewBox="0 0 520 260" xmlns="http://www.w3.org/2000/svg">
+            <!-- Background -->
+            <rect width="520" height="260" rx="8" fill="var(--bg-surface)" stroke="var(--border)" stroke-width="1"/>
+
+            <!-- Browser / This UI -->
+            <rect x="20" y="20" width="120" height="52" rx="6" fill="var(--bg-hover)" stroke="var(--accent)" stroke-width="1.5"/>
+            <text x="80" y="42" text-anchor="middle" fill="var(--accent)" font-size="11" font-weight="600">Browser</text>
+            <text x="80" y="56" text-anchor="middle" fill="var(--text-dim)" font-size="9">this UI (:3457)</text>
+
+            <!-- claude-doc server -->
+            <rect x="190" y="15" width="140" height="62" rx="6" fill="var(--bg-hover)" stroke="var(--green)" stroke-width="1.5"/>
+            <text x="260" y="36" text-anchor="middle" fill="var(--green)" font-size="11" font-weight="600">claude-doc server</text>
+            <text x="260" y="50" text-anchor="middle" fill="var(--text-dim)" font-size="9">proxy :3456</text>
+            <text x="260" y="62" text-anchor="middle" fill="var(--text-dim)" font-size="9">dashboard :3457</text>
+
+            <!-- Anthropic API -->
+            <rect x="380" y="20" width="120" height="52" rx="6" fill="var(--bg-hover)" stroke="var(--purple)" stroke-width="1.5"/>
+            <text x="440" y="42" text-anchor="middle" fill="var(--purple)" font-size="11" font-weight="600">Anthropic API</text>
+            <text x="440" y="56" text-anchor="middle" fill="var(--text-dim)" font-size="9">api.anthropic.com</text>
+
+            <!-- Arrow: Browser -> Server -->
+            <line x1="140" y1="46" x2="188" y2="46" stroke="var(--text-dim)" stroke-width="1" marker-end="url(#arrowhead)"/>
+            <text x="164" y="40" text-anchor="middle" fill="var(--text-dim)" font-size="8">WS</text>
+
+            <!-- Arrow: Server -> API -->
+            <line x1="330" y1="46" x2="378" y2="46" stroke="var(--text-dim)" stroke-width="1" marker-end="url(#arrowhead)"/>
+
+            <!-- Built-in claude -p -->
+            <rect x="30" y="110" width="180" height="52" rx="6" fill="var(--bg-hover)" stroke="var(--cyan)" stroke-width="1.5"/>
+            <text x="120" y="132" text-anchor="middle" fill="var(--cyan)" font-size="11" font-weight="600">claude -p (built-in)</text>
+            <text x="120" y="146" text-anchor="middle" fill="var(--text-dim)" font-size="9">spawned by server, --resume</text>
+
+            <!-- Working directory -->
+            <rect x="30" y="192" width="180" height="48" rx="6" fill="var(--bg-hover)" stroke="var(--orange)" stroke-width="1.5" stroke-dasharray="4,3"/>
+            <text x="120" y="213" text-anchor="middle" fill="var(--orange)" font-size="11" font-weight="600">Working Directory</text>
+            <text x="120" y="227" text-anchor="middle" fill="var(--text-dim)" font-size="9">set via toolbar</text>
+
+            <!-- Arrow: Server -> built-in claude -->
+            <line x1="230" y1="77" x2="150" y2="108" stroke="var(--text-dim)" stroke-width="1" marker-end="url(#arrowhead)"/>
+            <text x="180" y="88" text-anchor="middle" fill="var(--text-dim)" font-size="8">spawn</text>
+
+            <!-- Arrow: built-in claude -> server proxy -->
+            <path d="M 210 130 Q 270 130 270 79" fill="none" stroke="var(--text-dim)" stroke-width="1" marker-end="url(#arrowhead)"/>
+            <text x="252" y="110" text-anchor="middle" fill="var(--text-dim)" font-size="8">API calls</text>
+
+            <!-- Arrow: claude -> working dir -->
+            <line x1="120" y1="162" x2="120" y2="190" stroke="var(--text-dim)" stroke-width="1" marker-end="url(#arrowhead)"/>
+
+            <!-- External claude -p -->
+            <rect x="290" y="110" width="210" height="52" rx="6" fill="var(--bg-hover)" stroke="var(--yellow)" stroke-width="1.5" stroke-dasharray="4,3"/>
+            <text x="395" y="130" text-anchor="middle" fill="var(--yellow)" font-size="11" font-weight="600">External claude -p</text>
+            <text x="395" y="144" text-anchor="middle" fill="var(--text-dim)" font-size="9">your terminal, any project</text>
+
+            <!-- Arrow: external -> server proxy -->
+            <path d="M 350 110 Q 310 90 280 79" fill="none" stroke="var(--text-dim)" stroke-width="1" marker-end="url(#arrowhead)"/>
+            <text x="330" y="88" text-anchor="middle" fill="var(--text-dim)" font-size="8">API calls</text>
+
+            <!-- External command hint -->
+            <rect x="270" y="180" width="240" height="36" rx="4" fill="var(--bg)" stroke="var(--border)" stroke-width="1"/>
+            <text x="390" y="195" text-anchor="middle" fill="var(--yellow)" font-size="8.5" font-family="monospace">ANTHROPIC_BASE_URL=http://localhost:3456</text>
+            <text x="390" y="207" text-anchor="middle" fill="var(--text-dim)" font-size="8.5" font-family="monospace">claude -p "your prompt"</text>
+
+            <!-- Arrow: external -> command hint -->
+            <line x1="395" y1="162" x2="395" y2="178" stroke="var(--text-dim)" stroke-width="1" marker-end="url(#arrowhead)"/>
+
+            <!-- Inspector label -->
+            <text x="260" y="250" text-anchor="middle" fill="var(--text-dim)" font-size="9" font-style="italic">All API traffic is recorded and visible in the Inspector tab</text>
+
+            <!-- Arrowhead marker -->
+            <defs>
+              <marker id="arrowhead" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
+                <polygon points="0 0, 7 2.5, 0 5" fill="var(--text-dim)"/>
+              </marker>
+            </defs>
+          </svg>
+
+          <div class="welcome-text">
+            <p><strong>claude-doc</strong> is a transparent proxy for Claude Code.</p>
+            <p class="hint">
+              Type a prompt below to run <code>claude -p</code> headlessly.
+              Sessions auto-resume so context carries across prompts.
+              Or point any external <code>claude</code> at the proxy to capture its traffic too.
+            </p>
+            <p class="hint">
+              <strong>&#128193;</strong> set the working directory &nbsp;
+              <strong>permission-mode</strong> cycle what Claude can do without asking
+            </p>
+          </div>
         </div>
       </div>
       <div class="chat-input-area">
-        <div class="chat-settings" id="chatSettings">
-          <button class="chat-settings-toggle" id="chatSettingsToggle" title="Settings">&#9881;</button>
-          <div class="chat-settings-panel hidden" id="chatSettingsPanel">
-            <label class="chat-settings-label">Project root</label>
-            <div class="chat-settings-row">
-              <input type="text" id="chatCwdInput" class="chat-settings-input" placeholder="/path/to/project">
-              <button id="chatCwdSetBtn" class="chat-settings-btn">Set</button>
-            </div>
-          </div>
+        <div class="chat-toolbar">
+          <button class="chat-cwd-btn" id="chatCwdBtn" title="Change project directory">&#128193;</button>
+          <span class="chat-cwd-label" id="chatCwdLabel"></span>
+          <input type="text" id="chatCwdInput" class="chat-cwd-input hidden" placeholder="/path/to/project">
+          <button id="chatCwdSetBtn" class="chat-cwd-set hidden">Set</button>
+          <span class="chat-toolbar-sep"></span>
+          <span class="chat-toolbar-label">permission-mode:</span>
+          <button class="chat-perm-btn" id="chatPermBtn" title="Click to cycle permission mode"
+            data-mode="default"
+            data-modes="default,acceptEdits,plan,bypassPermissions,dontAsk"
+            data-comments="asks for confirmation on everything,auto-approves file operations,read-only&#44; analyze only,the nuclear option,denies unpermitted&#44; never blocks">
+            <span class="chat-perm-value">default</span>
+            <span class="chat-perm-comment">asks for confirmation on everything</span>
+          </button>
         </div>
         <div class="chat-status-bar">
           <span id="chatStatus" class="chat-status idle">idle</span>
@@ -920,6 +1015,7 @@
 
   <footer>
     <span id="stats">0 requests</span>
+    <a class="footer-credit" href="https://hpfreilabs.com" target="_blank" rel="noopener">by hpfreilabs.com</a>
   </footer>
   <script src="app.js"></script>
 </body>

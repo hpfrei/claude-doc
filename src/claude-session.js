@@ -2,13 +2,20 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 
 class ClaudeSession {
-  constructor(proxyPort, broadcaster) {
+  constructor(proxyPort, broadcaster, store) {
     this.proxyPort = proxyPort;
     this.broadcaster = broadcaster;
+    this.store = store;
     this.proc = null;
     this.buffer = '';
     this.cwd = process.env.PROJECT_DIR || process.cwd();
     this.sessionId = null;
+    this.ready = false;
+    this.permissionMode = 'default';
+  }
+
+  setReady() {
+    this.ready = true;
   }
 
   get running() {
@@ -20,11 +27,27 @@ class ClaudeSession {
       return false;
     }
     this.cwd = dir;
-    this.broadcaster.broadcast({ type: 'chat:settings', cwd: this.cwd });
+    this.broadcaster.broadcast({ type: 'chat:settings', cwd: this.cwd, permissionMode: this.permissionMode });
+    return true;
+  }
+
+  setPermissionMode(mode) {
+    const valid = ['default', 'acceptEdits', 'plan', 'bypassPermissions', 'dontAsk'];
+    if (!valid.includes(mode)) return false;
+    this.permissionMode = mode;
+    this.broadcaster.broadcast({ type: 'chat:settings', cwd: this.cwd, permissionMode: this.permissionMode });
     return true;
   }
 
   send(prompt) {
+    if (!this.ready) {
+      this.broadcaster.broadcast({
+        type: 'chat:error',
+        text: 'Services are still starting up. Please wait a moment and try again.',
+      });
+      return;
+    }
+
     if (this.running) {
       // Kill existing process before starting a new one
       this.kill();
@@ -34,6 +57,9 @@ class ClaudeSession {
     this.broadcaster.broadcast({ type: 'chat:status', status: 'running' });
 
     const args = ['-p', '--verbose', '--output-format', 'stream-json'];
+    if (this.permissionMode && this.permissionMode !== 'default') {
+      args.push('--permission-mode', this.permissionMode);
+    }
     if (this.sessionId) {
       args.push('--resume', this.sessionId);
     }
@@ -66,6 +92,7 @@ class ClaudeSession {
           if (event.session_id && !this.sessionId) {
             this.sessionId = event.session_id;
             console.log(`[session] Captured session ${this.sessionId}`);
+            this.store.saveSessionMeta(this.sessionId);
           }
           this.broadcaster.broadcast({ type: 'chat:event', event });
         } catch {
@@ -88,6 +115,7 @@ class ClaudeSession {
           if (event.session_id && !this.sessionId) {
             this.sessionId = event.session_id;
             console.log(`[session] Captured session ${this.sessionId}`);
+            this.store.saveSessionMeta(this.sessionId);
           }
           this.broadcaster.broadcast({ type: 'chat:event', event });
         } catch {
@@ -123,6 +151,21 @@ class ClaudeSession {
   clearSession() {
     this.kill();
     this.sessionId = null;
+  }
+
+  newSession() {
+    this.kill();
+    this.sessionId = null;
+    this.store.newSession();
+  }
+
+  switchSession(storeSessionId) {
+    this.kill();
+    const data = this.store.loadSession(storeSessionId);
+    if (!data) return null;
+    this.store.switchTo(storeSessionId);
+    this.sessionId = data.meta.claudeSessionId || null;
+    return data;
   }
 }
 

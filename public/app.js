@@ -2,11 +2,11 @@
 (function initTheme() {
   const btn = document.getElementById('themeToggle');
   const link = document.getElementById('themeLink');
-  let theme = localStorage.getItem('theme') || 'dark';
+  let theme = localStorage.getItem('theme') || 'bright';
   btn.textContent = theme;
 
   btn.addEventListener('click', () => {
-    theme = theme === 'dark' ? 'hpflabs' : 'dark';
+    theme = theme === 'dark' ? 'bright' : 'dark';
     link.href = `theme-${theme}.css`;
     localStorage.setItem('theme', theme);
     btn.textContent = theme;
@@ -20,6 +20,7 @@ const state = {
   selection: null,
   ws: null,
   reconnectDelay: 1000,
+  activeSessionId: null,
 };
 
 // --- DOM refs ---
@@ -28,8 +29,10 @@ const detailContent = document.getElementById('detail-content');
 const emptyState = document.getElementById('empty-state');
 const statusEl = document.getElementById('status');
 const statsEl = document.getElementById('stats');
-const clearBtn = document.getElementById('clearBtn');
-const resetBtn = document.getElementById('resetBtn');
+const sessionPicker = document.getElementById('sessionPicker');
+const newSessionBtn = document.getElementById('newSessionBtn');
+const deleteSessionBtn = document.getElementById('deleteSessionBtn');
+const switchSessionBtn = document.getElementById('switchSessionBtn');
 
 // --- Tool call extraction ---
 function extractToolCalls(interaction) {
@@ -201,6 +204,34 @@ function handleMessage(msg) {
     case 'interaction:error':
       markInteractionError(msg.interactionId, msg.error);
       updateInspectorBusy();
+      break;
+
+    case 'session:list':
+      updateSessionPicker(msg.sessions, msg.activeId);
+      break;
+
+    case 'session:switched':
+      // Reset inspector
+      state.interactions = msg.interactions || [];
+      state.selection = null;
+      renderTimeline();
+      updateStats();
+      updateInspectorBusy();
+      if (state.interactions.length > 0) {
+        select({ type: 'turn', id: state.interactions[state.interactions.length - 1].id });
+      } else {
+        detailContent.innerHTML = '';
+        detailContent.classList.add('hidden');
+        emptyState.classList.remove('hidden');
+      }
+      // Reset chat
+      resetChatView();
+      // Re-populate chat from history
+      if (msg.chatHistory) {
+        for (const entry of msg.chatHistory) {
+          appendChatBubble(entry.text, entry.role);
+        }
+      }
       break;
 
     case 'cleared':
@@ -946,15 +977,63 @@ function formatDuration(ms) {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
-// --- Event listeners ---
-function sendClear() {
+// --- Session management ---
+newSessionBtn?.addEventListener('click', () => {
   if (state.ws?.readyState === WebSocket.OPEN) {
-    state.ws.send(JSON.stringify({ type: 'clear' }));
+    state.ws.send(JSON.stringify({ type: 'session:new' }));
   }
+});
+
+// Selecting a session in the dropdown does NOT auto-switch.
+// It shows Switch/Del buttons for non-active sessions.
+sessionPicker?.addEventListener('change', () => {
+  updateSessionActions();
+});
+
+switchSessionBtn?.addEventListener('click', () => {
+  const id = parseInt(sessionPicker.value, 10);
+  if (!id || isNaN(id) || id === state.activeSessionId) return;
+  if (state.ws?.readyState === WebSocket.OPEN) {
+    state.ws.send(JSON.stringify({ type: 'session:switch', id }));
+  }
+});
+
+deleteSessionBtn?.addEventListener('click', () => {
+  const id = parseInt(sessionPicker.value, 10);
+  if (!id || isNaN(id) || id === state.activeSessionId) return;
+  if (state.ws?.readyState === WebSocket.OPEN) {
+    state.ws.send(JSON.stringify({ type: 'session:delete', id }));
+  }
+});
+
+function updateSessionActions() {
+  const id = parseInt(sessionPicker?.value, 10);
+  const isActive = !id || id === state.activeSessionId;
+  switchSessionBtn?.classList.toggle('hidden', isActive);
+  deleteSessionBtn?.classList.toggle('hidden', isActive);
 }
 
-clearBtn.addEventListener('click', sendClear);
-resetBtn.addEventListener('click', sendClear);
+function updateSessionPicker(sessions, activeId) {
+  if (!sessionPicker) return;
+  state.activeSessionId = activeId;
+  sessionPicker.innerHTML = '';
+  for (const s of sessions) {
+    const opt = document.createElement('option');
+    opt.value = s.id;
+    const suffix = s.id === activeId ? ' *' : '';
+    const label = `Session ${s.id} (${s.interactionCount} calls)${suffix}`;
+    opt.textContent = label;
+    if (s.id === activeId) opt.selected = true;
+    sessionPicker.appendChild(opt);
+  }
+  updateSessionActions();
+}
+
+function resetChatView() {
+  if (!chatMessages) return;
+  chatMessages.innerHTML = welcomeHTML;
+  state.chatCurrentEl = null;
+}
 
 // ============================================================
 // VIEW SWITCHING (Dashboard / Reference)
@@ -1037,6 +1116,7 @@ const chatMessages = document.getElementById('chatMessages');
 const chatInput = document.getElementById('chatInput');
 const chatSendBtn = document.getElementById('chatSendBtn');
 const chatStopBtn = document.getElementById('chatStopBtn');
+const welcomeHTML = chatMessages?.querySelector('.chat-welcome')?.outerHTML || '';
 const chatStatusEl = document.getElementById('chatStatus');
 
 let chatAutoScroll = true;
@@ -1155,16 +1235,31 @@ function updateChatStatus(status) {
 }
 
 // ============================================================
-// SETTINGS PANEL (project root)
+// TOOLBAR: PROJECT DIR + PERMISSION MODE
 // ============================================================
 
-const chatSettingsToggle = document.getElementById('chatSettingsToggle');
-const chatSettingsPanel = document.getElementById('chatSettingsPanel');
+const chatCwdBtn = document.getElementById('chatCwdBtn');
+const chatCwdLabel = document.getElementById('chatCwdLabel');
 const chatCwdInput = document.getElementById('chatCwdInput');
 const chatCwdSetBtn = document.getElementById('chatCwdSetBtn');
+const chatPermBtn = document.getElementById('chatPermBtn');
 
-chatSettingsToggle?.addEventListener('click', () => {
-  chatSettingsPanel?.classList.toggle('hidden');
+// Directory picker: click folder icon to toggle inline editor
+chatCwdBtn?.addEventListener('click', () => {
+  const editing = !chatCwdInput.classList.contains('hidden');
+  if (editing) {
+    // Hide editor
+    chatCwdInput.classList.add('hidden');
+    chatCwdSetBtn.classList.add('hidden');
+    chatCwdLabel.classList.remove('hidden');
+  } else {
+    // Show editor
+    chatCwdInput.value = chatCwdLabel.textContent || '';
+    chatCwdLabel.classList.add('hidden');
+    chatCwdInput.classList.remove('hidden');
+    chatCwdSetBtn.classList.remove('hidden');
+    chatCwdInput.focus();
+  }
 });
 
 chatCwdSetBtn?.addEventListener('click', () => {
@@ -1173,19 +1268,54 @@ chatCwdSetBtn?.addEventListener('click', () => {
   if (state.ws?.readyState === WebSocket.OPEN) {
     state.ws.send(JSON.stringify({ type: 'chat:setCwd', cwd }));
   }
+  // Collapse back to label
+  chatCwdInput.classList.add('hidden');
+  chatCwdSetBtn.classList.add('hidden');
+  chatCwdLabel.classList.remove('hidden');
 });
 
 chatCwdInput?.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
     e.preventDefault();
     chatCwdSetBtn?.click();
+  } else if (e.key === 'Escape') {
+    chatCwdInput.classList.add('hidden');
+    chatCwdSetBtn.classList.add('hidden');
+    chatCwdLabel.classList.remove('hidden');
+  }
+});
+
+// Permission mode: single-click cycles through modes
+chatPermBtn?.addEventListener('click', () => {
+  const modes = chatPermBtn.dataset.modes.split(',');
+  const comments = chatPermBtn.dataset.comments.split(',');
+  const current = chatPermBtn.dataset.mode;
+  const idx = modes.indexOf(current);
+  const next = (idx + 1) % modes.length;
+
+  chatPermBtn.dataset.mode = modes[next];
+  chatPermBtn.querySelector('.chat-perm-value').textContent = modes[next];
+  chatPermBtn.querySelector('.chat-perm-comment').textContent = comments[next];
+
+  if (state.ws?.readyState === WebSocket.OPEN) {
+    state.ws.send(JSON.stringify({ type: 'chat:setPermissionMode', mode: modes[next] }));
   }
 });
 
 function updateChatSettings(msg) {
-  if (msg.cwd && chatCwdInput) {
-    chatCwdInput.value = msg.cwd;
-    chatCwdInput.placeholder = msg.cwd;
+  if (msg.cwd) {
+    if (chatCwdLabel) chatCwdLabel.textContent = msg.cwd;
+    if (chatCwdInput) chatCwdInput.placeholder = msg.cwd;
+  }
+  if (msg.permissionMode && chatPermBtn) {
+    const modes = chatPermBtn.dataset.modes.split(',');
+    const comments = chatPermBtn.dataset.comments.split(',');
+    const idx = modes.indexOf(msg.permissionMode);
+    if (idx !== -1) {
+      chatPermBtn.dataset.mode = modes[idx];
+      chatPermBtn.querySelector('.chat-perm-value').textContent = modes[idx];
+      chatPermBtn.querySelector('.chat-perm-comment').textContent = comments[idx];
+    }
   }
 }
 
