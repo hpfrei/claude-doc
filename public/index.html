@@ -120,8 +120,8 @@
             <!-- .claude/ directory -->
             <rect x="174" y="220" width="155" height="68" rx="6" fill="var(--bg-hover)" stroke="var(--cyan)" stroke-width="1.5" stroke-dasharray="4,3"/>
             <text x="252" y="239" text-anchor="middle" fill="var(--cyan)" font-size="11" font-weight="600">.claude/</text>
-            <text x="252" y="253" text-anchor="middle" fill="var(--text-dim)" font-size="9">skills/ commands/</text>
-            <text x="252" y="266" text-anchor="middle" fill="var(--text-dim)" font-size="9">agents/ hooks</text>
+            <text x="252" y="253" text-anchor="middle" fill="var(--text-dim)" font-size="9">skills/ agents/</text>
+            <text x="252" y="266" text-anchor="middle" fill="var(--text-dim)" font-size="9">hooks</text>
             <text x="252" y="279" text-anchor="middle" fill="var(--text-dim)" font-size="8" font-style="italic">auto-discovered</text>
 
             <!-- Arrow: claude -> working dir -->
@@ -255,7 +255,6 @@
       <div class="ref-stats">
         <div class="ref-stat"><span class="ref-stat-value" id="capToolCount">25/25</span><span class="ref-stat-label">Tools</span></div>
         <div class="ref-stat"><span class="ref-stat-value" id="capSkillCount">8</span><span class="ref-stat-label">Skills</span></div>
-        <div class="ref-stat"><span class="ref-stat-value" id="capCommandCount">0</span><span class="ref-stat-label">Commands</span></div>
         <div class="ref-stat"><span class="ref-stat-value" id="capAgentCount">0</span><span class="ref-stat-label">Agents</span></div>
         <div class="ref-stat"><span class="ref-stat-value" id="capHookCount">0</span><span class="ref-stat-label">Hooks</span></div>
       </div>
@@ -264,7 +263,6 @@
       <div class="ref-nav" id="refNav">
         <button class="ref-nav-btn active" data-section="tools">Tools</button>
         <button class="ref-nav-btn" data-section="skills">Skills</button>
-        <button class="ref-nav-btn" data-section="commands">Commands</button>
         <button class="ref-nav-btn" data-section="agents">Agents</button>
         <button class="ref-nav-btn" data-section="hooks">Hooks</button>
       </div>
@@ -836,49 +834,10 @@
           <button class="cap-new-btn" id="capNewSkill">+ New Skill</button>
         </div>
         <div class="cap-list" id="capSkillList"></div>
-        <div class="cap-editor hidden" id="capSkillEditor">
-          <textarea id="capSkillTextarea" spellcheck="false"></textarea>
-          <div class="cap-editor-actions">
-            <button class="cap-save-btn" id="capSkillSave">Save</button>
-            <button class="cap-cancel-btn" id="capSkillCancel">Cancel</button>
-          </div>
-        </div>
 
         <div class="ref-category-title" style="margin-top:1.5rem">Built-in Skills Reference</div>
         <div class="ref-grid" id="skillsGrid"></div>
       </div><!-- /ref-skills -->
-
-      <!-- ===================== COMMANDS ===================== -->
-      <div class="ref-panel" id="ref-commands">
-        <div class="ref-intro">
-          <strong>Commands</strong> are the original custom slash-command format &mdash; single Markdown files in <code>.claude/commands/</code> (project) or <code>~/.claude/commands/</code> (user).
-          <br><br>
-          <strong>Invocation:</strong> user types <code>/command-name [args]</code>.
-          The file's Markdown content becomes Claude's instruction for that turn.
-          <code>$ARGUMENTS</code> is replaced with everything after the command name; positional access via <code>$ARGUMENTS[0]</code> or shorthand <code>$0</code>.
-          If <code>$ARGUMENTS</code> doesn't appear in the content, arguments are appended as <code>ARGUMENTS: &lt;value&gt;</code> at the end.
-          <br><br>
-          <strong>Context:</strong> commands run synchronously in the main conversation context &mdash; they see full conversation history, loaded CLAUDE.md files, and session state.
-          <br><br>
-          <strong>Relationship to skills:</strong> commands and skills are now unified.
-          A file at <code>.claude/commands/deploy.md</code> and a skill at <code>.claude/skills/deploy/SKILL.md</code> both create <code>/deploy</code> and work the same way.
-          When both exist, the skill takes precedence. Skills add a directory for supporting files, YAML frontmatter for model/effort/tool overrides, and auto-invocation &mdash;
-          so <strong>skills are the preferred format for new work</strong>. Existing command files continue to work.
-          MCP servers can also expose prompts that appear as slash commands in <code>/mcp__&lt;server&gt;__&lt;prompt&gt;</code> format.
-        </div>
-        <div class="cap-section-header">
-          <span>Custom slash commands stored in <code>.claude/commands/</code></span>
-          <button class="cap-new-btn" id="capNewCommand">+ New Command</button>
-        </div>
-        <div class="cap-list" id="capCommandList"></div>
-        <div class="cap-editor hidden" id="capCommandEditor">
-          <textarea id="capCommandTextarea" spellcheck="false"></textarea>
-          <div class="cap-editor-actions">
-            <button class="cap-save-btn" id="capCommandSave">Save</button>
-            <button class="cap-cancel-btn" id="capCommandCancel">Cancel</button>
-          </div>
-        </div>
-      </div><!-- /ref-commands -->
 
       <!-- ===================== AGENTS ===================== -->
       <div class="ref-panel" id="ref-agents">
@@ -909,13 +868,6 @@
           <button class="cap-new-btn" id="capNewAgent">+ New Agent</button>
         </div>
         <div class="cap-list" id="capAgentList"></div>
-        <div class="cap-editor hidden" id="capAgentEditor">
-          <textarea id="capAgentTextarea" spellcheck="false"></textarea>
-          <div class="cap-editor-actions">
-            <button class="cap-save-btn" id="capAgentSave">Save</button>
-            <button class="cap-cancel-btn" id="capAgentCancel">Cancel</button>
-          </div>
-        </div>
       </div><!-- /ref-agents -->
 
       <!-- ===================== HOOKS ===================== -->
@@ -926,21 +878,6 @@
           <button class="cap-new-btn" id="capNewHook">+ New Hook</button>
         </div>
         <div class="cap-list" id="capHookList"></div>
-        <div class="cap-form hidden" id="capHookEditor">
-          <div class="cap-form-row">
-            <label>Event: <select id="capHookEvent"></select></label>
-            <label class="cap-hook-matcher-label">Matcher: <input type="text" id="capHookMatcher" placeholder="Write|Edit"></label>
-          </div>
-          <div class="cap-form-row">
-            <label>Type: <select id="capHookType"><option value="command">command</option><option value="prompt">prompt</option></select></label>
-            <label>Timeout: <input type="number" id="capHookTimeout" value="30" min="1" max="300" style="width:50px"> sec</label>
-          </div>
-          <textarea id="capHookCommand" placeholder="Shell command or prompt..." spellcheck="false" rows="3"></textarea>
-          <div class="cap-editor-actions">
-            <button class="cap-save-btn" id="capHookSave">Save</button>
-            <button class="cap-cancel-btn" id="capHookCancel">Cancel</button>
-          </div>
-        </div>
 
         <div class="ref-intro" style="margin-top:1.5rem">
           <strong>Hooks</strong> are user-defined automations that fire at specific lifecycle points in Claude Code.
@@ -1133,6 +1070,250 @@
     <span id="stats">0 requests</span>
     <a class="footer-credit" href="https://hpfreilabs.com" target="_blank" rel="noopener">by hpfreilabs.com</a>
   </footer>
+    <!-- ===================== SKILL MODAL ===================== -->
+    <div class="cap-modal-backdrop hidden" id="skillModal">
+      <div class="cap-modal">
+        <div class="cap-modal-header">
+          <h3 id="skillModalTitle">New Skill</h3>
+          <button class="cap-modal-close" id="capSkillCancel" title="Close">&times;</button>
+        </div>
+        <div class="cap-modal-body">
+          <div class="cap-modal-columns">
+            <div class="cap-modal-main">
+              <label class="cap-modal-label">SKILL.md</label>
+              <textarea id="capSkillTextarea" class="cap-modal-code" spellcheck="false" rows="24"></textarea>
+
+              <div class="cap-modal-extra-files">
+                <label class="cap-modal-label">
+                  Extra files in skill directory
+                  <button class="cap-modal-add-file" id="capSkillAddFile" title="Add file">+ Add file</button>
+                </label>
+                <div id="capSkillFiles" class="cap-modal-file-list"></div>
+              </div>
+            </div>
+            <div class="cap-modal-docs">
+              <h4>Skill directory structure</h4>
+              <pre class="cap-modal-pre">.claude/skills/&lt;name&gt;/
+  SKILL.md          # required entrypoint
+  templates/        # optional supporting files
+  scripts/          # shell scripts for hooks
+  examples/         # example inputs/outputs
+  README.md         # extra documentation</pre>
+
+              <h4>SKILL.md frontmatter</h4>
+              <pre class="cap-modal-pre">---
+name: my-skill
+description: &gt;
+  Trigger when user asks to [action].
+  Also when conversation involves [topic].
+argument-hint: &lt;filename&gt; [options]
+# Invocation control:
+# user-invocable: true        # show in / menu (default)
+# disable-model-invocation: false  # auto-invoke (default)
+# Execution:
+# context: fork               # isolate in sub-agent
+# agent: Explore              # which sub-agent
+# model: sonnet               # override model
+# effort: high                # low/medium/high/max
+# allowed-tools: Read, Grep   # tool allowlist
+# shell: bash                 # for !`cmd` blocks
+# hooks:                      # scoped lifecycle hooks
+#   PreToolUse:
+#     - matcher: "Bash"
+#       hooks:
+#         - type: command
+#           command: "./scripts/check.sh"
+---
+
+Instructions for Claude here...</pre>
+
+              <h4>String substitutions</h4>
+              <pre class="cap-modal-pre">$ARGUMENTS        # all args from /name args
+$ARGUMENTS[0]     # first arg (also $0)
+$ARGUMENTS[1]     # second arg (also $1)
+${CLAUDE_SESSION_ID}    # current session
+${CLAUDE_SKILL_DIR}     # this skill's dir</pre>
+
+              <h4>Dynamic context injection</h4>
+              <pre class="cap-modal-pre"># Shell output injected before Claude sees it:
+!`cat ${CLAUDE_SKILL_DIR}/templates/base.md`
+!`git log --oneline -5`
+!`ls ${CLAUDE_SKILL_DIR}/examples/`</pre>
+
+              <h4>Supporting scripts</h4>
+              <p class="cap-modal-hint">Scripts in the skill directory can be referenced by hooks or <code>!`cmd`</code> blocks. They run relative to the working directory, but <code>${CLAUDE_SKILL_DIR}</code> points to the skill's own directory.</p>
+            </div>
+          </div>
+        </div>
+        <div class="cap-modal-footer">
+          <button class="cap-cancel-btn" id="capSkillCancel2">Cancel</button>
+          <button class="cap-save-btn" id="capSkillSave">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================== AGENT MODAL ===================== -->
+    <div class="cap-modal-backdrop hidden" id="agentModal">
+      <div class="cap-modal">
+        <div class="cap-modal-header">
+          <h3 id="agentModalTitle">New Agent</h3>
+          <button class="cap-modal-close" id="capAgentCancel" title="Close">&times;</button>
+        </div>
+        <div class="cap-modal-body">
+          <div class="cap-modal-columns">
+            <div class="cap-modal-main">
+              <label class="cap-modal-label">Agent definition (.md)</label>
+              <textarea id="capAgentTextarea" class="cap-modal-code" spellcheck="false" rows="24"></textarea>
+            </div>
+            <div class="cap-modal-docs">
+              <h4>Agent file</h4>
+              <pre class="cap-modal-pre">.claude/agents/&lt;name&gt;.md
+# Single file, not a directory.
+# YAML frontmatter + Markdown body.
+# Body becomes the agent's system prompt.</pre>
+
+              <h4>Frontmatter reference</h4>
+              <pre class="cap-modal-pre">---
+name: code-reviewer        # required
+description: |             # required
+  Reviews code for quality, security,
+  and style. Use proactively after
+  code changes.
+model: sonnet              # sonnet/opus/haiku/inherit
+tools: [Read, Grep, Glob, Bash]  # allowlist
+disallowedTools: [Write, Edit]   # denylist
+permissionMode: default    # default/plan/dontAsk/auto
+maxTurns: 20               # max agentic turns
+effort: high               # low/medium/high/max
+background: false          # true = run concurrently
+isolation: worktree        # git worktree isolation
+skills:                    # injected at startup
+  - api-conventions
+memory: project            # user/project/local
+mcpServers:                # agent-scoped MCP
+  - playwright:
+      type: stdio
+      command: npx
+      args: ["-y", "@playwright/mcp@latest"]
+hooks:                     # scoped to agent lifetime
+  PreToolUse:
+    - matcher: "Bash"
+      hooks:
+        - type: command
+          command: "./validate.sh"
+---
+
+You are a code reviewer. When invoked...</pre>
+
+              <h4>Invocation</h4>
+              <p class="cap-modal-hint">Claude delegates via the <code>Agent</code> tool based on <code>description</code> matching. Users can also <code>@"name (agent)"</code> or run <code>claude --agent name</code>.</p>
+
+              <h4>Isolation model</h4>
+              <p class="cap-modal-hint">Each invocation starts with a <strong>fresh context window</strong>. The agent sees only its own system prompt, not the parent conversation. Only a summary is returned to the parent. Agents cannot spawn other agents.</p>
+
+              <h4>Foreground vs background</h4>
+              <p class="cap-modal-hint"><strong>Foreground</strong> (default): blocks main conversation until complete. <strong>Background</strong>: runs concurrently, tool permissions gathered upfront.</p>
+            </div>
+          </div>
+        </div>
+        <div class="cap-modal-footer">
+          <button class="cap-cancel-btn" id="capAgentCancel2">Cancel</button>
+          <button class="cap-save-btn" id="capAgentSave">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================== HOOK MODAL ===================== -->
+    <div class="cap-modal-backdrop hidden" id="hookModal">
+      <div class="cap-modal">
+        <div class="cap-modal-header">
+          <h3 id="hookModalTitle">New Hook</h3>
+          <button class="cap-modal-close" id="capHookCancel" title="Close">&times;</button>
+        </div>
+        <div class="cap-modal-body">
+          <div class="cap-modal-columns">
+            <div class="cap-modal-main">
+              <div class="cap-modal-form-row">
+                <label>Event: <select id="capHookEvent"></select></label>
+                <label class="cap-hook-matcher-label">Matcher (regex): <input type="text" id="capHookMatcher" placeholder="Write|Edit"></label>
+              </div>
+              <div class="cap-modal-form-row">
+                <label>Type:
+                  <select id="capHookType">
+                    <option value="command">command</option>
+                    <option value="prompt">prompt</option>
+                    <option value="agent">agent</option>
+                  </select>
+                </label>
+                <label>Timeout: <input type="number" id="capHookTimeout" value="30" min="1" max="600" style="width:60px"> sec</label>
+              </div>
+              <label class="cap-modal-label">Command / prompt</label>
+              <textarea id="capHookCommand" class="cap-modal-code" spellcheck="false" rows="8" placeholder="Shell command, prompt text, or agent instructions..."></textarea>
+            </div>
+            <div class="cap-modal-docs">
+              <h4>Hook execution</h4>
+              <p class="cap-modal-hint">Hooks are run by the <strong>harness</strong>, not by Claude. They fire automatically at lifecycle events. <strong>Synchronous by default</strong> &mdash; blocks until complete.</p>
+
+              <h4>Handler types</h4>
+              <pre class="cap-modal-pre"># command — runs a shell command
+# receives JSON on stdin:
+# {session_id, tool_name, tool_input,
+#  tool_response, cwd, hook_event_name}
+
+# prompt — single-turn LLM evaluation
+# $ARGUMENTS replaced with JSON input
+# returns yes/no decision
+
+# agent — spawns sub-agent with tools
+# (Read, Grep, Glob) to evaluate</pre>
+
+              <h4>Exit codes (command type)</h4>
+              <pre class="cap-modal-pre">exit 0  # success, parse JSON stdout
+exit 2  # block (PreToolUse blocks tool)
+other   # non-blocking error, continue</pre>
+
+              <h4>JSON output (exit 0)</h4>
+              <pre class="cap-modal-pre">{
+  "continue": false,
+  "stopReason": "message to user",
+  "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
+    "permissionDecision": "deny",
+    "permissionDecisionReason": "...",
+    "updatedInput": {"command": "..."},
+    "additionalContext": "injected text"
+  }
+}</pre>
+
+              <h4>Common patterns</h4>
+              <pre class="cap-modal-pre"># Auto-format after file writes:
+jq -r '.tool_input.file_path //
+  .tool_response.filePath' |
+  { read -r f; prettier --write "$f"; }
+  2>/dev/null || true
+
+# Log all bash commands:
+jq -r '.tool_input.command' \
+  >> ~/.claude/bash-log.txt
+
+# Block dangerous commands:
+jq -r '.tool_input.command' |
+  grep -q 'rm -rf' &amp;&amp;
+  echo '{"decision":"block"}' ||
+  echo '{}'</pre>
+
+              <h4>Matcher reference</h4>
+              <p class="cap-modal-hint">Regex matched against tool name (<code>Bash</code>, <code>Edit</code>, <code>mcp__server__tool</code>), start reason, or notification type depending on event. Omit or use <code>*</code> to match all.</p>
+            </div>
+          </div>
+        </div>
+        <div class="cap-modal-footer">
+          <button class="cap-cancel-btn" id="capHookCancel2">Cancel</button>
+          <button class="cap-save-btn" id="capHookSave">Save</button>
+        </div>
+      </div>
+    </div>
+
   <script src="app.js"></script>
 </body>
 </html>

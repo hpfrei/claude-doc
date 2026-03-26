@@ -32,9 +32,9 @@ Browser ── WS ──>         │                  │
     ┌───────────┴───────────┐
     │  Capability Profile   │    .claude/
     │  model, effort, perms │    ├── skills/
-    │  tools, budget, prompt│    ├── commands/
-    │  ──> CLI flags        │    ├── agents/
-    └───────────────────────┘    └── hooks
+    │  tools, budget, prompt│    ├── agents/
+    │  ──> CLI flags        │    └── hooks
+    └───────────────────────┘
 ```
 
 - **Full request/response capture** — every `/v1/messages` and `/v1/messages/count_tokens` call, with headers, payloads, and timing
@@ -64,10 +64,9 @@ The Capabilities tab lets you control and extend Claude Code directly from the b
 
 - **Named profiles** — create, duplicate, and switch between capability profiles (Full, Safe, Read-only, Minimal built-in). Each profile bundles model, effort level, permission mode, disabled tools, max turns, budget cap, and system prompt overrides — all passed as CLI flags to `claude -p`
 - **Tool control** — enable/disable any of the 26 built-in tools via checkboxes per profile. Disabled tools are passed as `--disallowedTools` to the CLI
-- **Custom skills** — create, edit, and delete auto-invoked skills stored in `.claude/skills/<name>/SKILL.md`. Claude triggers them automatically based on description match. Built-in skills listed for reference
-- **Custom commands** — create, edit, and delete slash commands. Stored as `.md` files in `.claude/commands/`, auto-discovered by Claude Code
+- **Custom skills** — create, edit, and delete skills stored in `.claude/skills/<name>/SKILL.md` with supporting files (templates, scripts, examples). Claude triggers them automatically based on description match, or users invoke via `/name`. Built-in skills listed for reference
 - **Custom agents** — create, edit, and delete sub-agents with custom system prompts, model selection, and tool restrictions. Stored in `.claude/agents/`
-- **Hook editor** — create, edit, and delete lifecycle hooks (PreToolUse, PostToolUse, Stop, etc.) via a form-based editor. Stored in `.claude/settings.local.json`
+- **Hook editor** — create, edit, and delete lifecycle hooks (PreToolUse, PostToolUse, Stop, etc.) with three handler types (command, prompt, agent). Stored in `.claude/settings.local.json`
 
 ### Themes
 
@@ -211,7 +210,7 @@ src/
   sse-passthrough.js   Transform stream that taps SSE events without buffering
   claude-session.js    Spawns and manages claude -p subprocess with session resume
   dashboard-ws.js      WebSocket server, broadcasts events to connected dashboards
-  capabilities.js      Named profiles, tool/command/agent/hook CRUD, built-in presets
+  capabilities.js      Named profiles, tool/skill/agent/hook CRUD, built-in presets
   store.js             In-memory interaction store with disk persistence and session management
   utils.js             Header filtering, ID generation, payload sanitization
 public/

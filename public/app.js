@@ -283,10 +283,6 @@ function handleMessage(msg) {
       state.skills = msg.skills || [];
       renderSkillsPanel();
       break;
-    case 'command:list':
-      state.commands = msg.commands || [];
-      renderCommandsPanel();
-      break;
     case 'agent:list':
       state.agents = msg.agents || [];
       renderAgentsPanel();
@@ -1529,49 +1525,83 @@ state.profiles = [];
 state.activeProfileName = null;
 state.knownTools = [];
 state.knownSkills = [];
-state.commands = [];
 state.agents = [];
 state.hooks = [];
 state.hookEvents = [];
 state.matcherEvents = [];
 state.skills = [];
 state.editingSkill = null;
-state.editingCommand = null;
 state.editingAgent = null;
 state.editingHook = null;
-
-const COMMAND_TEMPLATE = `---
-name: my-command
-description: What this command does
-argument-hint: [optional-args]
----
-
-Your prompt here. Use $ARGUMENTS for user input.`;
 
 const AGENT_TEMPLATE = `---
 name: my-agent
 description: |
   Use this agent when [describe trigger conditions].
+  Should be invoked proactively when [situation].
 model: sonnet
 tools: [Read, Glob, Grep, Bash]
+# disallowedTools: [Write, Edit]
+# permissionMode: default
+# maxTurns: 20
+# effort: high
+# background: false
+# isolation: worktree
+# skills:
+#   - my-skill
+# hooks:
+#   PreToolUse:
+#     - matcher: "Bash"
+#       hooks:
+#         - type: command
+#           command: "./validate.sh"
 ---
 
-You are an expert at [role]. Your task is to [description].`;
+You are an expert at [role].
+
+## Your task
+
+When invoked, you should:
+
+1. [First step]
+2. [Second step]
+3. [Third step]
+
+## Guidelines
+
+- Always [important behavior]
+- Never [anti-pattern]
+- Return a concise summary of your findings`;
 
 const SKILL_TEMPLATE = `---
 name: my-skill
 description: >
   This skill should be used when the user asks to [describe trigger phrases],
   or when the conversation involves [topic area].
+argument-hint: <filename> [options]
+# user-invocable: true
+# disable-model-invocation: false
+# model: sonnet
+# effort: high
+# context: fork
+# allowed-tools: Read, Grep, Glob
 ---
 
 You are an expert at [domain]. When triggered, you should:
 
-1. [First step]
+1. Analyze the request: \$ARGUMENTS
 2. [Second step]
 3. [Third step]
 
-Use $ARGUMENTS for any user-provided context.`;
+## Guidelines
+
+- Always [important behavior]
+- Never [anti-pattern]
+
+## Dynamic context
+
+Available templates in this skill directory:
+!\`ls \${CLAUDE_SKILL_DIR}/templates/ 2>/dev/null || echo "(no templates yet)"\``;
 
 // --- Toolbar ---
 
@@ -1647,8 +1677,6 @@ function updateCapabilityStats() {
   const totalSkills = builtinSkills + customSkills;
   const skillCountEl = document.getElementById('capSkillCount');
   if (skillCountEl) skillCountEl.textContent = c.disableSlashCommands ? '0' : totalSkills;
-  const cmdCountEl = document.getElementById('capCommandCount');
-  if (cmdCountEl) cmdCountEl.textContent = state.commands.length;
   const agentCountEl = document.getElementById('capAgentCount');
   if (agentCountEl) agentCountEl.textContent = state.agents.length;
   const hookCountEl = document.getElementById('capHookCount');
@@ -1873,56 +1901,14 @@ function renderToolCheckboxes() {
   });
 }
 
-// --- Commands Panel ---
-
-function renderCommandsPanel() {
-  const list = document.getElementById('capCommandList');
-  if (!list) return;
-  list.innerHTML = '';
-  for (const cmd of state.commands) {
-    const item = document.createElement('div');
-    item.className = 'cap-list-item';
-    item.innerHTML = `<span class="cap-item-name">/${cmd.name}</span>
-      <span class="cap-item-desc">${escHtml(cmd.description)}</span>
-      <span class="cap-list-actions">
-        <button class="cap-edit-btn" data-name="${cmd.name}" data-kind="command" title="Edit">&#9998;</button>
-        <button class="cap-del-btn" data-name="${cmd.name}" data-kind="command" title="Delete">&#10005;</button>
-      </span>`;
-    list.appendChild(item);
-  }
-}
-
-document.getElementById('capNewCommand')?.addEventListener('click', () => {
-  state.editingCommand = '__new__';
-  const ta = document.getElementById('capCommandTextarea');
-  if (ta) ta.value = COMMAND_TEMPLATE;
-  document.getElementById('capCommandEditor')?.classList.remove('hidden');
-});
-
-document.getElementById('capCommandSave')?.addEventListener('click', () => {
-  const ta = document.getElementById('capCommandTextarea');
-  if (!ta) return;
-  const content = ta.value;
-  const nameMatch = content.match(/^name:\s*(.+)$/m);
-  const name = nameMatch ? nameMatch[1].trim() : null;
-  if (!name) return alert('Missing "name:" in frontmatter');
-  ws?.send(JSON.stringify({ type: 'command:save', name, content }));
-  document.getElementById('capCommandEditor')?.classList.add('hidden');
-  state.editingCommand = null;
-});
-
-document.getElementById('capCommandCancel')?.addEventListener('click', () => {
-  document.getElementById('capCommandEditor')?.classList.add('hidden');
-  state.editingCommand = null;
-});
-
 // --- Skills Panel (CRUD) ---
 
 document.getElementById('capNewSkill')?.addEventListener('click', () => {
   state.editingSkill = '__new__';
-  const ta = document.getElementById('capSkillTextarea');
-  if (ta) ta.value = SKILL_TEMPLATE;
-  document.getElementById('capSkillEditor')?.classList.remove('hidden');
+  document.getElementById('skillModalTitle').textContent = 'New Skill';
+  document.getElementById('capSkillTextarea').value = SKILL_TEMPLATE;
+  document.getElementById('capSkillFiles').innerHTML = '';
+  document.getElementById('skillModal')?.classList.remove('hidden');
 });
 
 document.getElementById('capSkillSave')?.addEventListener('click', () => {
@@ -1932,14 +1918,37 @@ document.getElementById('capSkillSave')?.addEventListener('click', () => {
   const nameMatch = content.match(/^name:\s*(.+)$/m);
   const name = nameMatch ? nameMatch[1].trim() : null;
   if (!name) return alert('Missing "name:" in frontmatter');
-  ws?.send(JSON.stringify({ type: 'skill:save', name, content }));
-  document.getElementById('capSkillEditor')?.classList.add('hidden');
+  // Collect extra files
+  const extraFiles = [];
+  document.querySelectorAll('#capSkillFiles .cap-modal-file-entry').forEach(entry => {
+    const fname = entry.querySelector('.cap-modal-file-name')?.value?.trim();
+    const fcontent = entry.querySelector('.cap-modal-file-content')?.value;
+    if (fname && fcontent != null) extraFiles.push({ name: fname, content: fcontent });
+  });
+  ws?.send(JSON.stringify({ type: 'skill:save', name, content, extraFiles }));
+  document.getElementById('skillModal')?.classList.add('hidden');
   state.editingSkill = null;
 });
 
-document.getElementById('capSkillCancel')?.addEventListener('click', () => {
-  document.getElementById('capSkillEditor')?.classList.add('hidden');
+function closeSkillModal() {
+  document.getElementById('skillModal')?.classList.add('hidden');
   state.editingSkill = null;
+}
+document.getElementById('capSkillCancel')?.addEventListener('click', closeSkillModal);
+document.getElementById('capSkillCancel2')?.addEventListener('click', closeSkillModal);
+
+document.getElementById('capSkillAddFile')?.addEventListener('click', () => {
+  const container = document.getElementById('capSkillFiles');
+  if (!container) return;
+  const entry = document.createElement('div');
+  entry.className = 'cap-modal-file-entry';
+  entry.innerHTML = `<div class="cap-modal-file-header">
+      <input type="text" class="cap-modal-file-name" placeholder="filename (e.g. templates/base.md or scripts/check.sh)">
+      <button class="cap-modal-file-remove" title="Remove">&times;</button>
+    </div>
+    <textarea class="cap-modal-file-content cap-modal-code" rows="6" spellcheck="false" placeholder="File content..."></textarea>`;
+  entry.querySelector('.cap-modal-file-remove').addEventListener('click', () => entry.remove());
+  container.appendChild(entry);
 });
 
 // --- Agents Panel ---
@@ -1963,9 +1972,9 @@ function renderAgentsPanel() {
 
 document.getElementById('capNewAgent')?.addEventListener('click', () => {
   state.editingAgent = '__new__';
-  const ta = document.getElementById('capAgentTextarea');
-  if (ta) ta.value = AGENT_TEMPLATE;
-  document.getElementById('capAgentEditor')?.classList.remove('hidden');
+  document.getElementById('agentModalTitle').textContent = 'New Agent';
+  document.getElementById('capAgentTextarea').value = AGENT_TEMPLATE;
+  document.getElementById('agentModal')?.classList.remove('hidden');
 });
 
 document.getElementById('capAgentSave')?.addEventListener('click', () => {
@@ -1976,14 +1985,16 @@ document.getElementById('capAgentSave')?.addEventListener('click', () => {
   const name = nameMatch ? nameMatch[1].trim() : null;
   if (!name) return alert('Missing "name:" in frontmatter');
   ws?.send(JSON.stringify({ type: 'agent:save', name, content }));
-  document.getElementById('capAgentEditor')?.classList.add('hidden');
+  document.getElementById('agentModal')?.classList.add('hidden');
   state.editingAgent = null;
 });
 
-document.getElementById('capAgentCancel')?.addEventListener('click', () => {
-  document.getElementById('capAgentEditor')?.classList.add('hidden');
+function closeAgentModal() {
+  document.getElementById('agentModal')?.classList.add('hidden');
   state.editingAgent = null;
-});
+}
+document.getElementById('capAgentCancel')?.addEventListener('click', closeAgentModal);
+document.getElementById('capAgentCancel2')?.addEventListener('click', closeAgentModal);
 
 // --- Hooks Panel ---
 
@@ -2020,12 +2031,13 @@ function renderHooksPanel() {
 
 document.getElementById('capNewHook')?.addEventListener('click', () => {
   state.editingHook = '__new__';
+  document.getElementById('hookModalTitle').textContent = 'New Hook';
   document.getElementById('capHookEvent').value = state.hookEvents[0] || 'PreToolUse';
   document.getElementById('capHookMatcher').value = '';
   document.getElementById('capHookType').value = 'command';
   document.getElementById('capHookCommand').value = '';
   document.getElementById('capHookTimeout').value = '30';
-  document.getElementById('capHookEditor')?.classList.remove('hidden');
+  document.getElementById('hookModal')?.classList.remove('hidden');
   updateHookMatcherVisibility();
 });
 
@@ -2038,19 +2050,32 @@ document.getElementById('capHookSave')?.addEventListener('click', () => {
     timeout: parseInt(document.getElementById('capHookTimeout')?.value) || 30,
   };
   if (!hook.command) return alert('Command/prompt is required');
-  // If editing existing, include indices
   if (state.editingHook && state.editingHook !== '__new__') {
     hook.entryIndex = state.editingHook.entryIndex;
     hook.hookIndex = state.editingHook.hookIndex;
   }
   ws?.send(JSON.stringify({ type: 'hook:save', hook }));
-  document.getElementById('capHookEditor')?.classList.add('hidden');
+  document.getElementById('hookModal')?.classList.add('hidden');
   state.editingHook = null;
 });
 
-document.getElementById('capHookCancel')?.addEventListener('click', () => {
-  document.getElementById('capHookEditor')?.classList.add('hidden');
+function closeHookModal() {
+  document.getElementById('hookModal')?.classList.add('hidden');
   state.editingHook = null;
+}
+document.getElementById('capHookCancel')?.addEventListener('click', closeHookModal);
+document.getElementById('capHookCancel2')?.addEventListener('click', closeHookModal);
+
+// Close modals on backdrop click
+document.querySelectorAll('.cap-modal-backdrop').forEach(backdrop => {
+  backdrop.addEventListener('click', (e) => {
+    if (e.target === backdrop) {
+      backdrop.classList.add('hidden');
+      state.editingSkill = null;
+      state.editingAgent = null;
+      state.editingHook = null;
+    }
+  });
 });
 
 document.getElementById('capHookEvent')?.addEventListener('change', updateHookMatcherVisibility);
@@ -2071,29 +2096,24 @@ document.addEventListener('click', (e) => {
 
   if (editBtn) {
     const kind = editBtn.dataset.kind;
-    if (kind === 'command') {
-      const name = editBtn.dataset.name;
-      const cmd = state.commands.find(c => c.name === name);
-      if (cmd) {
-        state.editingCommand = name;
-        document.getElementById('capCommandTextarea').value = cmd.content;
-        document.getElementById('capCommandEditor')?.classList.remove('hidden');
-      }
-    } else if (kind === 'skill') {
+    if (kind === 'skill') {
       const name = editBtn.dataset.name;
       const skill = state.skills.find(s => s.name === name);
       if (skill) {
         state.editingSkill = name;
+        document.getElementById('skillModalTitle').textContent = `Edit Skill: ${name}`;
         document.getElementById('capSkillTextarea').value = skill.content;
-        document.getElementById('capSkillEditor')?.classList.remove('hidden');
+        document.getElementById('capSkillFiles').innerHTML = '';
+        document.getElementById('skillModal')?.classList.remove('hidden');
       }
     } else if (kind === 'agent') {
       const name = editBtn.dataset.name;
       const agent = state.agents.find(a => a.name === name);
       if (agent) {
         state.editingAgent = name;
+        document.getElementById('agentModalTitle').textContent = `Edit Agent: ${name}`;
         document.getElementById('capAgentTextarea').value = agent.content;
-        document.getElementById('capAgentEditor')?.classList.remove('hidden');
+        document.getElementById('agentModal')?.classList.remove('hidden');
       }
     } else if (kind === 'hook') {
       const event = editBtn.dataset.event;
@@ -2101,12 +2121,13 @@ document.addEventListener('click', (e) => {
       const hookData = state.hooks.find(h => h.event === event && h.entryIndex === entryIdx);
       if (hookData) {
         state.editingHook = { entryIndex: hookData.entryIndex, hookIndex: hookData.hookIndex };
+        document.getElementById('hookModalTitle').textContent = `Edit Hook: ${hookData.event}`;
         document.getElementById('capHookEvent').value = hookData.event;
         document.getElementById('capHookMatcher').value = hookData.matcher;
         document.getElementById('capHookType').value = hookData.type;
         document.getElementById('capHookCommand').value = hookData.command;
         document.getElementById('capHookTimeout').value = hookData.timeout;
-        document.getElementById('capHookEditor')?.classList.remove('hidden');
+        document.getElementById('hookModal')?.classList.remove('hidden');
         updateHookMatcherVisibility();
       }
     }
@@ -2114,11 +2135,7 @@ document.addEventListener('click', (e) => {
 
   if (delBtn) {
     const kind = delBtn.dataset.kind;
-    if (kind === 'command') {
-      if (confirm(`Delete command /${delBtn.dataset.name}?`)) {
-        ws?.send(JSON.stringify({ type: 'command:delete', name: delBtn.dataset.name }));
-      }
-    } else if (kind === 'skill') {
+    if (kind === 'skill') {
       if (confirm(`Delete skill ${delBtn.dataset.name}?`)) {
         ws?.send(JSON.stringify({ type: 'skill:delete', name: delBtn.dataset.name }));
       }
