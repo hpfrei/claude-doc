@@ -2,6 +2,8 @@
 
 Thanks for your interest in contributing! This project is open to contributions of all kinds — bug fixes, new features, documentation improvements, and ideas.
 
+Please read the [Code of Conduct](CODE_OF_CONDUCT.md) before participating.
+
 ## Getting Started
 
 1. Fork the repository
