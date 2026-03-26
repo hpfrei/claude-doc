@@ -1353,48 +1353,16 @@ footer {
   font-family: inherit;
 }
 
-.cap-check-field {
-  gap: 4px;
-}
-
-.cap-check-field input[type="checkbox"] {
-  margin: 0;
-}
-
-.cap-info {
-  font-size: 10px;
+/* Profile summary in toolbar */
+.cap-profile-summary {
+  font-size: 11px;
   color: var(--text-dim);
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-
-.cap-toolbar-actions {
-  display: flex;
-  gap: 6px;
-  margin-left: auto;
-}
-
-.cap-apply-btn, .cap-reset-btn {
-  font-size: 11px;
-  padding: 4px 12px;
-  border-radius: 4px;
-  border: 1px solid var(--border);
-  cursor: pointer;
-  font-family: inherit;
-}
-
-.cap-apply-btn {
-  background: var(--cyan);
-  color: var(--bg);
-  border-color: var(--cyan);
-  font-weight: 600;
-}
-.cap-apply-btn:hover { opacity: 0.85; }
-
-.cap-reset-btn {
-  background: var(--bg);
-  color: var(--text-dim);
-}
-.cap-reset-btn:hover { color: var(--text); }
 
 /* Profile action buttons */
 .cap-profile-action {
@@ -1411,30 +1379,6 @@ footer {
 .cap-del-profile { color: var(--red); }
 .cap-del-profile:hover { border-color: var(--red); }
 .cap-del-profile:disabled { opacity: 0.4; cursor: not-allowed; }
-
-/* Wide fields (system prompt textareas) */
-.cap-field-wide {
-  flex: 1 1 100%;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-}
-.cap-field-wide textarea {
-  width: 100%;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  color: var(--text);
-  border-radius: 4px;
-  padding: 6px 8px;
-  font-size: 11px;
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
-  resize: vertical;
-  box-sizing: border-box;
-}
-.cap-field-wide textarea:focus {
-  outline: none;
-  border-color: var(--accent);
-}
 
 /* Skills status */
 .cap-skills-status strong { color: var(--green); }
@@ -1901,6 +1845,115 @@ footer {
     max-height: 94vh;
   }
 }
+
+/* Profile modal form groups */
+.pm-form-group {
+  margin-bottom: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+.pm-form-group:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+.pm-form-group h4 {
+  font-size: 11px;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 0 0 10px 0;
+  font-weight: 600;
+}
+
+.pm-field-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.pm-field-row:last-child { margin-bottom: 0; }
+
+.pm-field-row label {
+  font-size: 11px;
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pm-field-row select,
+.pm-field-row input[type="text"],
+.pm-field-row input[type="number"] {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-family: inherit;
+}
+
+.pm-field-row input[readonly] {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.pm-wide {
+  flex: 1 1 100%;
+}
+.pm-wide input {
+  flex: 1;
+}
+
+.pm-check {
+  gap: 4px !important;
+}
+.pm-check input[type="checkbox"] {
+  margin: 0;
+}
+
+.pm-textarea {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 4px;
+  padding: 8px;
+  font-size: 11px;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  resize: vertical;
+  box-sizing: border-box;
+  line-height: 1.5;
+}
+.pm-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.pm-tool-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 4px 12px;
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.pm-tool-item {
+  font-size: 11px;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  padding: 2px 0;
+}
+.pm-tool-item:hover { color: var(--accent); }
+.pm-tool-item input[type="checkbox"] { margin: 0; }
 
 /* ============================================================
    TASK PANEL
