@@ -279,6 +279,10 @@ function handleMessage(msg) {
       markQuestionTimeout(msg.toolUseId);
       break;
 
+    case 'skill:list':
+      state.skills = msg.skills || [];
+      renderSkillsPanel();
+      break;
     case 'command:list':
       state.commands = msg.commands || [];
       renderCommandsPanel();
@@ -290,6 +294,11 @@ function handleMessage(msg) {
     case 'hook:list':
       state.hooks = msg.hooks || [];
       renderHooksPanel();
+      break;
+    case 'profile:list':
+      state.profiles = msg.profiles || [];
+      renderCapabilitiesToolbar();
+      renderChatProfileSelect();
       break;
   }
 }
@@ -1262,7 +1271,7 @@ const chatCwdBtn = document.getElementById('chatCwdBtn');
 const chatCwdLabel = document.getElementById('chatCwdLabel');
 const chatCwdInput = document.getElementById('chatCwdInput');
 const chatCwdSetBtn = document.getElementById('chatCwdSetBtn');
-const chatPermBtn = document.getElementById('chatPermBtn');
+const chatProfileSelect = document.getElementById('chatProfileSelect');
 
 // Directory picker: click folder icon to toggle inline editor
 chatCwdBtn?.addEventListener('click', () => {
@@ -1305,50 +1314,58 @@ chatCwdInput?.addEventListener('keydown', (e) => {
   }
 });
 
-// Permission mode: single-click cycles through modes
-chatPermBtn?.addEventListener('click', () => {
-  const modes = chatPermBtn.dataset.modes.split(',');
-  const comments = chatPermBtn.dataset.comments.split(',');
-  const current = chatPermBtn.dataset.mode;
-  const idx = modes.indexOf(current);
-  const next = (idx + 1) % modes.length;
-
-  chatPermBtn.dataset.mode = modes[next];
-  chatPermBtn.querySelector('.chat-perm-value').textContent = modes[next];
-  chatPermBtn.querySelector('.chat-perm-comment').textContent = comments[next];
-
-  if (state.ws?.readyState === WebSocket.OPEN) {
-    state.ws.send(JSON.stringify({ type: 'chat:setPermissionMode', mode: modes[next] }));
-  }
+// Profile selector in Claude tab
+chatProfileSelect?.addEventListener('change', (e) => {
+  const name = e.target.value;
+  if (!name) return;
+  ws?.send(JSON.stringify({ type: 'chat:switchProfile', name }));
 });
+
+function renderChatProfileSelect() {
+  if (!chatProfileSelect) return;
+  chatProfileSelect.innerHTML = '';
+  for (const p of (state.profiles || [])) {
+    const opt = document.createElement('option');
+    opt.value = p.name;
+    opt.textContent = p.builtin ? p.label : p.label || p.name;
+    opt.title = p.description || '';
+    chatProfileSelect.appendChild(opt);
+  }
+  chatProfileSelect.value = state.activeProfileName || 'full';
+  // Update info span
+  const info = document.getElementById('chatProfileInfo');
+  if (info && state.capabilities) {
+    const c = state.capabilities;
+    const parts = [];
+    if (c.model) parts.push(c.model);
+    if (c.effort) parts.push(c.effort);
+    if (c.permissionMode && c.permissionMode !== 'default') parts.push(c.permissionMode);
+    if (c.maxTurns) parts.push(c.maxTurns + ' turns');
+    info.textContent = parts.length ? `(${parts.join(', ')})` : '';
+  }
+}
 
 function updateChatSettings(msg) {
   if (msg.cwd) {
     if (chatCwdLabel) chatCwdLabel.textContent = msg.cwd;
     if (chatCwdInput) chatCwdInput.placeholder = msg.cwd;
   }
-  if (msg.permissionMode && chatPermBtn) {
-    const modes = chatPermBtn.dataset.modes.split(',');
-    const comments = chatPermBtn.dataset.comments.split(',');
-    const idx = modes.indexOf(msg.permissionMode);
-    if (idx !== -1) {
-      chatPermBtn.dataset.mode = modes[idx];
-      chatPermBtn.querySelector('.chat-perm-value').textContent = modes[idx];
-      chatPermBtn.querySelector('.chat-perm-comment').textContent = comments[idx];
-    }
-  }
-  // Capabilities
-  if (msg.presets) state.presets = msg.presets;
+  // Profiles
+  if (msg.profiles) state.profiles = msg.profiles;
   if (msg.knownTools) state.knownTools = msg.knownTools;
+  if (msg.knownSkills) state.knownSkills = msg.knownSkills;
   if (msg.hookEvents) state.hookEvents = msg.hookEvents;
   if (msg.matcherEvents) state.matcherEvents = msg.matcherEvents;
   if (msg.capabilities) {
     state.capabilities = msg.capabilities;
+    state.activeProfileName = msg.capabilities.name;
     state.capabilitiesDirty = false;
   }
-  if (msg.capabilities || msg.presets) {
+  if (msg.capabilities || msg.profiles) {
     renderCapabilitiesToolbar();
     renderToolCheckboxes();
+    renderChatProfileSelect();
+    renderSkillsPanel();
   }
 }
 
@@ -1508,13 +1525,17 @@ function markQuestionTimeout(toolUseId) {
 state.capabilities = null;
 state.capabilitiesDirty = false;
 state.capabilitiesServer = null; // last server-confirmed state
-state.presets = [];
+state.profiles = [];
+state.activeProfileName = null;
 state.knownTools = [];
+state.knownSkills = [];
 state.commands = [];
 state.agents = [];
 state.hooks = [];
 state.hookEvents = [];
 state.matcherEvents = [];
+state.skills = [];
+state.editingSkill = null;
 state.editingCommand = null;
 state.editingAgent = null;
 state.editingHook = null;
@@ -1537,53 +1558,77 @@ tools: [Read, Glob, Grep, Bash]
 
 You are an expert at [role]. Your task is to [description].`;
 
+const SKILL_TEMPLATE = `---
+name: my-skill
+description: >
+  This skill should be used when the user asks to [describe trigger phrases],
+  or when the conversation involves [topic area].
+---
+
+You are an expert at [domain]. When triggered, you should:
+
+1. [First step]
+2. [Second step]
+3. [Third step]
+
+Use $ARGUMENTS for any user-provided context.`;
+
 // --- Toolbar ---
 
 function renderCapabilitiesToolbar() {
   const c = state.capabilities;
   if (!c) return;
 
+  // Profile selector
+  const profileSel = document.getElementById('capProfileSelect');
+  if (profileSel && state.profiles.length > 0) {
+    profileSel.innerHTML = '';
+    for (const p of state.profiles) {
+      const opt = document.createElement('option');
+      opt.value = p.name;
+      opt.textContent = p.builtin ? `${p.label} (built-in)` : (p.label || p.name);
+      opt.title = p.description || '';
+      profileSel.appendChild(opt);
+    }
+    profileSel.value = c.name || 'full';
+  }
+
+  // Disable delete for builtins
+  const delBtn = document.getElementById('capDeleteProfile');
+  if (delBtn) delBtn.disabled = !!c.builtin;
+
+  // Field values
   const modelSel = document.getElementById('capModel');
-  const presetSel = document.getElementById('capPreset');
+  const effortSel = document.getElementById('capEffort');
+  const permSel = document.getElementById('capPermission');
   const maxInput = document.getElementById('capMaxTurns');
+  const budgetInput = document.getElementById('capMaxBudget');
   const slashCheck = document.getElementById('capSlash');
+  const appendTA = document.getElementById('capAppendPrompt');
+  const sysTA = document.getElementById('capSystemPrompt');
   const applyBtn = document.getElementById('capApply');
   const resetBtn = document.getElementById('capReset');
 
   if (modelSel) modelSel.value = c.model || '';
+  if (effortSel) effortSel.value = c.effort || '';
+  if (permSel) permSel.value = c.permissionMode || 'default';
   if (maxInput) maxInput.value = c.maxTurns || '';
+  if (budgetInput) budgetInput.value = c.maxBudgetUsd || '';
   if (slashCheck) slashCheck.checked = !c.disableSlashCommands;
+  if (appendTA) appendTA.value = c.appendSystemPrompt || '';
+  if (sysTA) sysTA.value = c.systemPrompt || '';
 
-  // Populate preset dropdown
-  if (presetSel && state.presets.length > 0) {
-    presetSel.innerHTML = '';
-    for (const p of state.presets) {
-      const opt = document.createElement('option');
-      opt.value = p.name;
-      opt.textContent = p.label;
-      opt.title = p.description;
-      presetSel.appendChild(opt);
-    }
-    const customOpt = document.createElement('option');
-    customOpt.value = 'custom';
-    customOpt.textContent = 'Custom';
-    presetSel.appendChild(customOpt);
-    presetSel.value = c.name || 'custom';
-  }
+  // Disable editing for builtin profiles
+  const editable = !c.builtin;
+  [modelSel, effortSel, permSel, maxInput, budgetInput, slashCheck, appendTA, sysTA].forEach(el => {
+    if (el) el.disabled = !editable;
+  });
 
   if (applyBtn) applyBtn.classList.toggle('hidden', !state.capabilitiesDirty);
   if (resetBtn) resetBtn.classList.toggle('hidden', !state.capabilitiesDirty);
 
   // Update stats
-  const enabled = state.knownTools.length - (c.disabledTools?.length || 0);
-  const countEl = document.getElementById('capToolCount');
-  if (countEl) countEl.textContent = `${enabled}/${state.knownTools.length}`;
-  const cmdCountEl = document.getElementById('capCommandCount');
-  if (cmdCountEl) cmdCountEl.textContent = state.commands.length;
-  const agentCountEl = document.getElementById('capAgentCount');
-  if (agentCountEl) agentCountEl.textContent = state.agents.length;
-  const hookCountEl = document.getElementById('capHookCount');
-  if (hookCountEl) hookCountEl.textContent = state.hooks.length;
+  updateCapabilityStats();
 
   // Save server state for reset
   if (!state.capabilitiesDirty) {
@@ -1591,44 +1636,132 @@ function renderCapabilitiesToolbar() {
   }
 }
 
-function markCapDirty() {
-  state.capabilitiesDirty = true;
-  // Auto-set preset to 'custom'
-  const presetSel = document.getElementById('capPreset');
-  if (presetSel) presetSel.value = 'custom';
-  if (state.capabilities) state.capabilities.name = 'custom';
-  document.getElementById('capApply')?.classList.remove('hidden');
-  document.getElementById('capReset')?.classList.remove('hidden');
-  // Update tool count
-  const enabled = state.knownTools.length - (state.capabilities?.disabledTools?.length || 0);
+function updateCapabilityStats() {
+  const c = state.capabilities;
+  if (!c) return;
+  const enabled = state.knownTools.length - (c.disabledTools?.length || 0);
   const countEl = document.getElementById('capToolCount');
   if (countEl) countEl.textContent = `${enabled}/${state.knownTools.length}`;
+  const builtinSkills = state.knownSkills?.length || 0;
+  const customSkills = state.skills?.length || 0;
+  const totalSkills = builtinSkills + customSkills;
+  const skillCountEl = document.getElementById('capSkillCount');
+  if (skillCountEl) skillCountEl.textContent = c.disableSlashCommands ? '0' : totalSkills;
+  const cmdCountEl = document.getElementById('capCommandCount');
+  if (cmdCountEl) cmdCountEl.textContent = state.commands.length;
+  const agentCountEl = document.getElementById('capAgentCount');
+  if (agentCountEl) agentCountEl.textContent = state.agents.length;
+  const hookCountEl = document.getElementById('capHookCount');
+  if (hookCountEl) hookCountEl.textContent = state.hooks.length;
 }
 
-// Toolbar event listeners
+function markCapDirty() {
+  if (state.capabilities?.builtin) return; // cannot dirty builtins
+  state.capabilitiesDirty = true;
+  document.getElementById('capApply')?.classList.remove('hidden');
+  document.getElementById('capReset')?.classList.remove('hidden');
+  updateCapabilityStats();
+}
+
+// Profile selector (Capabilities tab)
+document.getElementById('capProfileSelect')?.addEventListener('change', (e) => {
+  const name = e.target.value;
+  if (!name) return;
+  if (state.capabilitiesDirty) {
+    if (!confirm('Discard unsaved changes to the current profile?')) {
+      e.target.value = state.capabilities?.name || '';
+      return;
+    }
+  }
+  ws?.send(JSON.stringify({ type: 'chat:switchProfile', name }));
+});
+
+// Profile CRUD buttons
+document.getElementById('capNewProfile')?.addEventListener('click', () => {
+  const name = prompt('Profile name (lowercase, hyphens ok):');
+  if (!name) return;
+  if (!/^[a-z][a-z0-9-]*$/.test(name) || name.length < 2) return alert('Invalid name. Use lowercase letters, numbers, and hyphens. Min 2 chars.');
+  ws?.send(JSON.stringify({
+    type: 'profile:save',
+    profile: {
+      name, label: name, description: '', builtin: false,
+      model: null, effort: null, permissionMode: 'default',
+      disabledTools: [], disableSlashCommands: false,
+      maxTurns: null, maxBudgetUsd: null, appendSystemPrompt: null, systemPrompt: null,
+    },
+  }));
+  // Switch to the new profile after a short delay for the broadcast to arrive
+  setTimeout(() => ws?.send(JSON.stringify({ type: 'chat:switchProfile', name })), 200);
+});
+
+document.getElementById('capDuplicateProfile')?.addEventListener('click', () => {
+  const source = state.capabilities?.name;
+  if (!source) return;
+  const name = prompt('Name for the copy:', source + '-copy');
+  if (!name) return;
+  if (!/^[a-z][a-z0-9-]*$/.test(name) || name.length < 2) return alert('Invalid name.');
+  ws?.send(JSON.stringify({ type: 'profile:duplicate', source, newName: name }));
+  setTimeout(() => ws?.send(JSON.stringify({ type: 'chat:switchProfile', name })), 200);
+});
+
+document.getElementById('capDeleteProfile')?.addEventListener('click', () => {
+  const name = state.capabilities?.name;
+  if (!name) return;
+  if (state.capabilities?.builtin) return alert('Cannot delete built-in profiles. Duplicate it to create an editable copy.');
+  if (!confirm(`Delete profile "${name}"? This cannot be undone.`)) return;
+  ws?.send(JSON.stringify({ type: 'profile:delete', name }));
+});
+
+// Toolbar field listeners
 document.getElementById('capModel')?.addEventListener('change', (e) => {
-  if (!state.capabilities) return;
+  if (!state.capabilities || state.capabilities.builtin) return;
   state.capabilities.model = e.target.value || null;
   markCapDirty();
 });
 
+document.getElementById('capEffort')?.addEventListener('change', (e) => {
+  if (!state.capabilities || state.capabilities.builtin) return;
+  state.capabilities.effort = e.target.value || null;
+  markCapDirty();
+});
+
+document.getElementById('capPermission')?.addEventListener('change', (e) => {
+  if (!state.capabilities || state.capabilities.builtin) return;
+  state.capabilities.permissionMode = e.target.value || 'default';
+  markCapDirty();
+});
+
 document.getElementById('capMaxTurns')?.addEventListener('change', (e) => {
-  if (!state.capabilities) return;
+  if (!state.capabilities || state.capabilities.builtin) return;
   const v = parseInt(e.target.value);
   state.capabilities.maxTurns = v > 0 ? v : null;
   markCapDirty();
 });
 
-document.getElementById('capSlash')?.addEventListener('change', (e) => {
-  if (!state.capabilities) return;
-  state.capabilities.disableSlashCommands = !e.target.checked;
+document.getElementById('capMaxBudget')?.addEventListener('change', (e) => {
+  if (!state.capabilities || state.capabilities.builtin) return;
+  const v = parseFloat(e.target.value);
+  state.capabilities.maxBudgetUsd = v > 0 ? v : null;
   markCapDirty();
 });
 
-document.getElementById('capPreset')?.addEventListener('change', (e) => {
-  const name = e.target.value;
-  if (name === 'custom') return;
-  ws?.send(JSON.stringify({ type: 'chat:loadPreset', preset: name }));
+document.getElementById('capSlash')?.addEventListener('change', (e) => {
+  if (!state.capabilities || state.capabilities.builtin) return;
+  state.capabilities.disableSlashCommands = !e.target.checked;
+  markCapDirty();
+  renderSkillsPanel();
+});
+
+document.getElementById('capAppendPrompt')?.addEventListener('input', (e) => {
+  if (!state.capabilities || state.capabilities.builtin) return;
+  state.capabilities.appendSystemPrompt = e.target.value.trim() || null;
+  markCapDirty();
+});
+
+document.getElementById('capSystemPrompt')?.addEventListener('input', (e) => {
+  if (!state.capabilities || state.capabilities.builtin) return;
+  state.capabilities.systemPrompt = e.target.value.trim() || null;
+  markCapDirty();
 });
 
 document.getElementById('capApply')?.addEventListener('click', () => {
@@ -1642,8 +1775,60 @@ document.getElementById('capReset')?.addEventListener('click', () => {
     state.capabilitiesDirty = false;
     renderCapabilitiesToolbar();
     renderToolCheckboxes();
+    renderSkillsPanel();
   }
 });
+
+// --- Skills Panel ---
+
+function renderSkillsPanel() {
+  const disabled = state.capabilities?.disableSlashCommands;
+
+  // Update status indicator
+  const statusEl = document.getElementById('capSkillsStatus');
+  if (statusEl) {
+    statusEl.innerHTML = `Currently: <strong>${disabled ? 'disabled' : 'enabled'}</strong> by profile`;
+  }
+
+  // Custom skills list
+  const list = document.getElementById('capSkillList');
+  if (list) {
+    list.innerHTML = '';
+    for (const skill of state.skills) {
+      const item = document.createElement('div');
+      item.className = 'cap-list-item';
+      item.innerHTML = `<span class="cap-item-name">${escHtml(skill.name)}</span>
+        <span class="cap-item-desc">${escHtml(skill.description)}</span>
+        <span class="cap-list-actions">
+          <button class="cap-edit-btn" data-name="${skill.name}" data-kind="skill" title="Edit">&#9998;</button>
+          <button class="cap-del-btn" data-name="${skill.name}" data-kind="skill" title="Delete">&#10005;</button>
+        </span>`;
+      list.appendChild(item);
+    }
+  }
+
+  // Built-in skills reference grid
+  const grid = document.getElementById('skillsGrid');
+  if (grid) {
+    grid.innerHTML = '';
+    for (const skill of (state.knownSkills || [])) {
+      const card = document.createElement('div');
+      card.className = `ref-card${disabled ? ' disabled' : ''}`;
+      card.innerHTML = `<div class="ref-card-header" onclick="toggleRef(this)">
+          <span><span class="ref-name">/${skill.name}</span> <span class="ref-tag tag-sk">skill</span></span>
+          <span class="ref-brief">${escHtml(skill.description)}</span>
+          <span class="ref-chevron">&#9654;</span>
+        </div>
+        <div class="ref-card-body">
+          <p>${escHtml(skill.description)}</p>
+          <p class="ref-intro">Built-in skill. Invoked automatically by Claude when the context matches.</p>
+        </div>`;
+      grid.appendChild(card);
+    }
+  }
+
+  updateCapabilityStats();
+}
 
 // --- Tool Checkboxes ---
 
@@ -1651,6 +1836,7 @@ function renderToolCheckboxes() {
   const c = state.capabilities;
   if (!c) return;
   const disabled = new Set(c.disabledTools || []);
+  const isBuiltin = !!c.builtin;
 
   document.querySelectorAll('#ref-tools .ref-card').forEach(card => {
     const nameEl = card.querySelector('.ref-name');
@@ -1667,7 +1853,7 @@ function renderToolCheckboxes() {
       cb.addEventListener('click', (e) => e.stopPropagation());
       cb.addEventListener('change', (e) => {
         const name = e.target.closest('.ref-card').querySelector('.ref-name').textContent.trim();
-        if (!state.capabilities) return;
+        if (!state.capabilities || state.capabilities.builtin) return;
         if (e.target.checked) {
           state.capabilities.disabledTools = state.capabilities.disabledTools.filter(t => t !== name);
         } else {
@@ -1682,6 +1868,7 @@ function renderToolCheckboxes() {
       header.insertBefore(cb, header.firstChild);
     }
     cb.checked = !disabled.has(toolName);
+    cb.disabled = isBuiltin;
     card.classList.toggle('disabled', disabled.has(toolName));
   });
 }
@@ -1727,6 +1914,32 @@ document.getElementById('capCommandSave')?.addEventListener('click', () => {
 document.getElementById('capCommandCancel')?.addEventListener('click', () => {
   document.getElementById('capCommandEditor')?.classList.add('hidden');
   state.editingCommand = null;
+});
+
+// --- Skills Panel (CRUD) ---
+
+document.getElementById('capNewSkill')?.addEventListener('click', () => {
+  state.editingSkill = '__new__';
+  const ta = document.getElementById('capSkillTextarea');
+  if (ta) ta.value = SKILL_TEMPLATE;
+  document.getElementById('capSkillEditor')?.classList.remove('hidden');
+});
+
+document.getElementById('capSkillSave')?.addEventListener('click', () => {
+  const ta = document.getElementById('capSkillTextarea');
+  if (!ta) return;
+  const content = ta.value;
+  const nameMatch = content.match(/^name:\s*(.+)$/m);
+  const name = nameMatch ? nameMatch[1].trim() : null;
+  if (!name) return alert('Missing "name:" in frontmatter');
+  ws?.send(JSON.stringify({ type: 'skill:save', name, content }));
+  document.getElementById('capSkillEditor')?.classList.add('hidden');
+  state.editingSkill = null;
+});
+
+document.getElementById('capSkillCancel')?.addEventListener('click', () => {
+  document.getElementById('capSkillEditor')?.classList.add('hidden');
+  state.editingSkill = null;
 });
 
 // --- Agents Panel ---
@@ -1866,6 +2079,14 @@ document.addEventListener('click', (e) => {
         document.getElementById('capCommandTextarea').value = cmd.content;
         document.getElementById('capCommandEditor')?.classList.remove('hidden');
       }
+    } else if (kind === 'skill') {
+      const name = editBtn.dataset.name;
+      const skill = state.skills.find(s => s.name === name);
+      if (skill) {
+        state.editingSkill = name;
+        document.getElementById('capSkillTextarea').value = skill.content;
+        document.getElementById('capSkillEditor')?.classList.remove('hidden');
+      }
     } else if (kind === 'agent') {
       const name = editBtn.dataset.name;
       const agent = state.agents.find(a => a.name === name);
@@ -1896,6 +2117,10 @@ document.addEventListener('click', (e) => {
     if (kind === 'command') {
       if (confirm(`Delete command /${delBtn.dataset.name}?`)) {
         ws?.send(JSON.stringify({ type: 'command:delete', name: delBtn.dataset.name }));
+      }
+    } else if (kind === 'skill') {
+      if (confirm(`Delete skill ${delBtn.dataset.name}?`)) {
+        ws?.send(JSON.stringify({ type: 'skill:delete', name: delBtn.dataset.name }));
       }
     } else if (kind === 'agent') {
       if (confirm(`Delete agent ${delBtn.dataset.name}?`)) {

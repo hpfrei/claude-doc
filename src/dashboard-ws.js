@@ -24,15 +24,16 @@ class DashboardBroadcaster {
         ws.send(JSON.stringify({
           type: 'chat:settings',
           cwd,
-          permissionMode: this.claudeSession.permissionMode,
           capabilities: this.claudeSession.capabilities,
-          presets: Object.values(caps.PRESETS).map(p => ({ name: p.name, label: p.label, description: p.description })),
+          profiles: caps.listProfiles(cwd),
           knownTools: caps.KNOWN_TOOLS,
+          knownSkills: caps.KNOWN_SKILLS,
           hookEvents: caps.HOOK_EVENTS,
           matcherEvents: caps.MATCHER_EVENTS,
         }));
-        // Send commands, agents, hooks for capabilities tab
+        // Send commands, skills, agents, hooks for capabilities tab
         ws.send(JSON.stringify({ type: 'command:list', commands: caps.listCommands(cwd) }));
+        ws.send(JSON.stringify({ type: 'skill:list', skills: caps.listSkills(cwd) }));
         ws.send(JSON.stringify({ type: 'agent:list', agents: caps.listAgents(cwd) }));
         ws.send(JSON.stringify({ type: 'hook:list', hooks: caps.listHooks(cwd) }));
       }
@@ -55,11 +56,6 @@ class DashboardBroadcaster {
             const ok = this.claudeSession.setCwd(msg.cwd || '');
             if (!ok) {
               ws.send(JSON.stringify({ type: 'chat:error', text: `Invalid directory: ${msg.cwd}` }));
-            }
-          } else if (msg.type === 'chat:setPermissionMode' && this.claudeSession) {
-            const ok = this.claudeSession.setPermissionMode(msg.mode || 'default');
-            if (!ok) {
-              ws.send(JSON.stringify({ type: 'chat:error', text: `Invalid permission mode: ${msg.mode}` }));
             }
           } else if (msg.type === 'session:delete' && this.claudeSession) {
             const ok = this.store.deleteSession(msg.id);
@@ -90,12 +86,50 @@ class DashboardBroadcaster {
             if (pending?.resolve) {
               pending.resolve(msg.answer);
             }
-          // --- Capabilities ---
+          // --- Capabilities / Profiles ---
           } else if (msg.type === 'chat:setCapabilities' && this.claudeSession) {
             this.claudeSession.setCapabilities(msg.capabilities);
-          } else if (msg.type === 'chat:loadPreset' && this.claudeSession) {
-            const ok = this.claudeSession.loadPreset(msg.preset);
-            if (!ok) ws.send(JSON.stringify({ type: 'chat:error', text: `Unknown preset: ${msg.preset}` }));
+            const cwd = this.claudeSession.cwd;
+            this.broadcast({ type: 'profile:list', profiles: caps.listProfiles(cwd) });
+          } else if (msg.type === 'chat:switchProfile' && this.claudeSession) {
+            const ok = this.claudeSession.switchProfile(msg.name);
+            if (!ok) {
+              ws.send(JSON.stringify({ type: 'chat:error', text: `Unknown profile: ${msg.name}` }));
+            } else {
+              const cwd = this.claudeSession.cwd;
+              this.broadcast({ type: 'profile:list', profiles: caps.listProfiles(cwd) });
+            }
+          } else if (msg.type === 'profile:list') {
+            const cwd = this.claudeSession?.cwd || process.cwd();
+            ws.send(JSON.stringify({ type: 'profile:list', profiles: caps.listProfiles(cwd) }));
+          } else if (msg.type === 'profile:save') {
+            const cwd = this.claudeSession?.cwd || process.cwd();
+            const ok = caps.saveProfile(cwd, msg.profile);
+            if (ok) {
+              this.broadcast({ type: 'profile:list', profiles: caps.listProfiles(cwd) });
+            } else {
+              ws.send(JSON.stringify({ type: 'chat:error', text: `Cannot save profile: ${msg.profile?.name} (invalid or builtin name)` }));
+            }
+          } else if (msg.type === 'profile:delete') {
+            const cwd = this.claudeSession?.cwd || process.cwd();
+            const ok = caps.deleteProfile(cwd, msg.name);
+            if (ok) {
+              // If active profile was deleted, switch to full
+              if (this.claudeSession && this.claudeSession.capabilities.name === msg.name) {
+                this.claudeSession.switchProfile('full');
+              }
+              this.broadcast({ type: 'profile:list', profiles: caps.listProfiles(cwd) });
+            } else {
+              ws.send(JSON.stringify({ type: 'chat:error', text: `Cannot delete profile: ${msg.name}` }));
+            }
+          } else if (msg.type === 'profile:duplicate') {
+            const cwd = this.claudeSession?.cwd || process.cwd();
+            const ok = caps.duplicateProfile(cwd, msg.source, msg.newName);
+            if (ok) {
+              this.broadcast({ type: 'profile:list', profiles: caps.listProfiles(cwd) });
+            } else {
+              ws.send(JSON.stringify({ type: 'chat:error', text: `Cannot duplicate profile: invalid name or source` }));
+            }
           // --- Commands ---
           } else if (msg.type === 'command:list') {
             const cwd = this.claudeSession?.cwd || process.cwd();
@@ -112,6 +146,22 @@ class DashboardBroadcaster {
             const cwd = this.claudeSession?.cwd || process.cwd();
             const ok = caps.deleteCommand(cwd, msg.name);
             if (ok) this.broadcast({ type: 'command:list', commands: caps.listCommands(cwd) });
+          // --- Skills ---
+          } else if (msg.type === 'skill:list') {
+            const cwd = this.claudeSession?.cwd || process.cwd();
+            ws.send(JSON.stringify({ type: 'skill:list', skills: caps.listSkills(cwd) }));
+          } else if (msg.type === 'skill:save') {
+            const cwd = this.claudeSession?.cwd || process.cwd();
+            const ok = caps.saveSkill(cwd, msg.name, msg.content);
+            if (ok) {
+              this.broadcast({ type: 'skill:list', skills: caps.listSkills(cwd) });
+            } else {
+              ws.send(JSON.stringify({ type: 'chat:error', text: `Invalid skill name: ${msg.name}` }));
+            }
+          } else if (msg.type === 'skill:delete') {
+            const cwd = this.claudeSession?.cwd || process.cwd();
+            const ok = caps.deleteSkill(cwd, msg.name);
+            if (ok) this.broadcast({ type: 'skill:list', skills: caps.listSkills(cwd) });
           // --- Agents ---
           } else if (msg.type === 'agent:list') {
             const cwd = this.claudeSession?.cwd || process.cwd();

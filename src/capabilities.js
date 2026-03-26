@@ -12,48 +12,38 @@ const KNOWN_TOOLS = [
   'CronCreate', 'CronDelete', 'CronList', 'RemoteTrigger',
 ];
 
-const PRESETS = {
+const BUILTIN_PROFILES = {
   full: {
-    name: 'full',
-    label: 'Full',
-    description: 'All tools enabled',
-    disabledTools: [],
-    disableSlashCommands: false,
-    model: null,
-    maxTurns: null,
-    appendSystemPrompt: null,
+    name: 'full', label: 'Full', description: 'All tools enabled, default permissions', builtin: true,
+    model: null, effort: null, permissionMode: 'default',
+    disabledTools: [], disableSlashCommands: false,
+    maxTurns: null, maxBudgetUsd: null, appendSystemPrompt: null, systemPrompt: null,
   },
   safe: {
-    name: 'safe',
-    label: 'Safe',
-    description: 'No file writes or shell execution',
+    name: 'safe', label: 'Safe', description: 'No file writes or shell execution', builtin: true,
+    model: null, effort: null, permissionMode: 'acceptEdits',
     disabledTools: ['Bash', 'Write', 'Edit', 'NotebookEdit', 'CronCreate', 'CronDelete', 'EnterWorktree', 'ExitWorktree'],
     disableSlashCommands: false,
-    model: null,
-    maxTurns: null,
-    appendSystemPrompt: null,
+    maxTurns: null, maxBudgetUsd: null, appendSystemPrompt: null, systemPrompt: null,
   },
   readonly: {
-    name: 'readonly',
-    label: 'Read-only',
-    description: 'Read and search only',
+    name: 'readonly', label: 'Read-only', description: 'Read and search only', builtin: true,
+    model: null, effort: null, permissionMode: 'plan',
     disabledTools: KNOWN_TOOLS.filter(t => !['Read', 'Glob', 'Grep', 'AskUserQuestion'].includes(t)),
     disableSlashCommands: true,
-    model: null,
-    maxTurns: null,
-    appendSystemPrompt: null,
+    maxTurns: null, maxBudgetUsd: null, appendSystemPrompt: null, systemPrompt: null,
   },
   minimal: {
-    name: 'minimal',
-    label: 'Minimal',
-    description: 'Absolute minimum for code reading',
+    name: 'minimal', label: 'Minimal', description: 'Absolute minimum for code reading', builtin: true,
+    model: null, effort: null, permissionMode: 'plan',
     disabledTools: KNOWN_TOOLS.filter(t => !['Read', 'Glob', 'Grep'].includes(t)),
     disableSlashCommands: true,
-    model: null,
-    maxTurns: null,
-    appendSystemPrompt: null,
+    maxTurns: null, maxBudgetUsd: null, appendSystemPrompt: null, systemPrompt: null,
   },
 };
+
+// Backward compat alias
+const PRESETS = BUILTIN_PROFILES;
 
 const HOOK_EVENTS = [
   'PreToolUse', 'PostToolUse', 'UserPromptSubmit', 'Stop', 'SubagentStop',
@@ -63,37 +53,160 @@ const HOOK_EVENTS = [
 // Events that support a matcher (tool name filter)
 const MATCHER_EVENTS = ['PreToolUse', 'PostToolUse'];
 
-// --- Profile management ---
+const KNOWN_SKILLS = [
+  { name: 'commit', description: 'Create a git commit with a well-crafted message' },
+  { name: 'review-pr', description: 'Review a pull request from GitHub' },
+  { name: 'create-pr', description: 'Create a GitHub pull request' },
+  { name: 'simplify', description: 'Simplify and refactor selected code' },
+  { name: 'pdf', description: 'Read and summarize PDF files' },
+  { name: 'init', description: 'Initialize Claude Code configuration for a project' },
+  { name: 'bug', description: 'Find and fix bugs in the codebase' },
+  { name: 'memory', description: "Manage Claude's project memory (CLAUDE.md)" },
+];
 
-function profilePath(baseDir) {
-  return path.join(baseDir, 'capabilities', 'profile.json');
+// --- Profile management (multi-profile) ---
+
+const VALID_EFFORTS = ['low', 'medium', 'high', 'max'];
+const VALID_PERMISSIONS = ['default', 'acceptEdits', 'plan', 'bypassPermissions', 'dontAsk', 'auto'];
+
+function profilesDir(baseDir) {
+  return path.join(baseDir, 'capabilities', 'profiles');
 }
 
-function loadProfile(baseDir) {
-  const p = profilePath(baseDir);
+function profileFilePath(baseDir, name) {
+  return path.join(profilesDir(baseDir), `${name}.json`);
+}
+
+function activeFilePath(baseDir) {
+  return path.join(baseDir, 'capabilities', 'active.json');
+}
+
+function listProfiles(baseDir) {
+  const builtins = Object.values(BUILTIN_PROFILES).map(p => ({
+    name: p.name, label: p.label, description: p.description, builtin: true,
+  }));
+  const dir = profilesDir(baseDir);
+  let customs = [];
   try {
-    if (fs.existsSync(p)) {
-      const data = JSON.parse(fs.readFileSync(p, 'utf-8'));
-      return validateProfile(data);
+    if (fs.existsSync(dir)) {
+      customs = fs.readdirSync(dir)
+        .filter(f => f.endsWith('.json'))
+        .map(f => {
+          try {
+            const data = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf-8'));
+            return { name: data.name, label: data.label || data.name, description: data.description || '', builtin: false };
+          } catch { return null; }
+        })
+        .filter(Boolean)
+        .filter(p => !BUILTIN_PROFILES[p.name]); // don't shadow builtins
     }
   } catch {}
-  return { ...PRESETS.full };
+  return [...builtins, ...customs];
+}
+
+function loadProfile(baseDir, name) {
+  if (BUILTIN_PROFILES[name]) {
+    return JSON.parse(JSON.stringify(BUILTIN_PROFILES[name]));
+  }
+  const file = profileFilePath(baseDir, name);
+  try {
+    if (fs.existsSync(file)) {
+      return validateProfile(JSON.parse(fs.readFileSync(file, 'utf-8')));
+    }
+  } catch {}
+  return null;
+}
+
+function loadActiveProfile(baseDir) {
+  // Migration: old single-file profile.json
+  const oldFile = path.join(baseDir, 'capabilities', 'profile.json');
+  const actFile = activeFilePath(baseDir);
+  if (fs.existsSync(oldFile) && !fs.existsSync(actFile)) {
+    try {
+      const old = JSON.parse(fs.readFileSync(oldFile, 'utf-8'));
+      const migrated = validateProfile({ ...old, name: old.name || 'custom', label: old.label || 'Custom (migrated)' });
+      if (!BUILTIN_PROFILES[migrated.name]) {
+        const dir = profilesDir(baseDir);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(profileFilePath(baseDir, migrated.name), JSON.stringify(migrated, null, 2));
+        setActiveProfile(baseDir, migrated.name);
+      } else {
+        setActiveProfile(baseDir, migrated.name);
+      }
+      fs.unlinkSync(oldFile);
+      return loadProfile(baseDir, migrated.name) || JSON.parse(JSON.stringify(BUILTIN_PROFILES.full));
+    } catch {}
+  }
+
+  // Normal load
+  try {
+    if (fs.existsSync(actFile)) {
+      const { active } = JSON.parse(fs.readFileSync(actFile, 'utf-8'));
+      if (active) {
+        const profile = loadProfile(baseDir, active);
+        if (profile) return profile;
+      }
+    }
+  } catch {}
+  return JSON.parse(JSON.stringify(BUILTIN_PROFILES.full));
 }
 
 function saveProfile(baseDir, profile) {
+  const validated = validateProfile(profile);
+  // Cannot overwrite builtin names
+  if (BUILTIN_PROFILES[validated.name]) return false;
+  const dir = profilesDir(baseDir);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(profileFilePath(baseDir, validated.name), JSON.stringify(validated, null, 2));
+  return true;
+}
+
+function deleteProfile(baseDir, name) {
+  if (BUILTIN_PROFILES[name]) return false;
+  const file = profileFilePath(baseDir, name);
+  if (!fs.existsSync(file)) return false;
+  fs.unlinkSync(file);
+  // If deleted profile was active, reset to full
+  try {
+    const actFile = activeFilePath(baseDir);
+    if (fs.existsSync(actFile)) {
+      const { active } = JSON.parse(fs.readFileSync(actFile, 'utf-8'));
+      if (active === name) setActiveProfile(baseDir, 'full');
+    }
+  } catch {}
+  return true;
+}
+
+function setActiveProfile(baseDir, name) {
   const dir = path.join(baseDir, 'capabilities');
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(profilePath(baseDir), JSON.stringify(profile, null, 2));
+  fs.writeFileSync(activeFilePath(baseDir), JSON.stringify({ active: name }, null, 2));
+}
+
+function duplicateProfile(baseDir, sourceName, newName) {
+  if (!isValidName(newName)) return false;
+  if (BUILTIN_PROFILES[newName]) return false;
+  const source = loadProfile(baseDir, sourceName);
+  if (!source) return false;
+  const copy = { ...source, name: newName, label: newName, builtin: false };
+  return saveProfile(baseDir, copy);
 }
 
 function validateProfile(p) {
   return {
     name: p.name || 'custom',
+    label: typeof p.label === 'string' ? p.label : (p.name || 'Custom'),
+    description: typeof p.description === 'string' ? p.description : '',
+    builtin: !!p.builtin,
     model: p.model || null,
+    effort: VALID_EFFORTS.includes(p.effort) ? p.effort : null,
+    permissionMode: VALID_PERMISSIONS.includes(p.permissionMode) ? p.permissionMode : 'default',
     disabledTools: Array.isArray(p.disabledTools) ? p.disabledTools.filter(t => KNOWN_TOOLS.includes(t)) : [],
     disableSlashCommands: !!p.disableSlashCommands,
     maxTurns: typeof p.maxTurns === 'number' && p.maxTurns > 0 ? p.maxTurns : null,
+    maxBudgetUsd: typeof p.maxBudgetUsd === 'number' && p.maxBudgetUsd > 0 ? p.maxBudgetUsd : null,
     appendSystemPrompt: typeof p.appendSystemPrompt === 'string' && p.appendSystemPrompt.trim() ? p.appendSystemPrompt.trim() : null,
+    systemPrompt: typeof p.systemPrompt === 'string' && p.systemPrompt.trim() ? p.systemPrompt.trim() : null,
   };
 }
 
@@ -134,6 +247,54 @@ function deleteCommand(cwd, name) {
   const file = path.join(commandsDir(cwd), `${name}.md`);
   if (!fs.existsSync(file)) return false;
   fs.unlinkSync(file);
+  return true;
+}
+
+// --- Skill CRUD (.claude/skills/<name>/SKILL.md) ---
+
+function skillsDir(cwd) {
+  return path.join(cwd, '.claude', 'skills');
+}
+
+function listSkills(cwd) {
+  const dir = skillsDir(cwd);
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir)
+    .filter(f => {
+      const skillFile = path.join(dir, f, 'SKILL.md');
+      return fs.existsSync(skillFile) && fs.statSync(path.join(dir, f)).isDirectory();
+    })
+    .map(f => {
+      const content = fs.readFileSync(path.join(dir, f, 'SKILL.md'), 'utf-8');
+      const desc = extractFrontmatterField(content, 'description') || '';
+      return { name: f, description: desc.split('\n')[0].trim(), content };
+    });
+}
+
+function readSkill(cwd, name) {
+  const file = path.join(skillsDir(cwd), name, 'SKILL.md');
+  if (!fs.existsSync(file)) return null;
+  return fs.readFileSync(file, 'utf-8');
+}
+
+function saveSkill(cwd, name, content) {
+  if (!isValidName(name)) return false;
+  const dir = path.join(skillsDir(cwd), name);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'SKILL.md'), content);
+  return true;
+}
+
+function deleteSkill(cwd, name) {
+  const dir = path.join(skillsDir(cwd), name);
+  const file = path.join(dir, 'SKILL.md');
+  if (!fs.existsSync(file)) return false;
+  fs.unlinkSync(file);
+  // Remove the directory if empty
+  try {
+    const remaining = fs.readdirSync(dir);
+    if (remaining.length === 0) fs.rmdirSync(dir);
+  } catch {}
   return true;
 }
 
@@ -303,16 +464,27 @@ function extractFrontmatterField(content, field) {
 
 module.exports = {
   KNOWN_TOOLS,
-  PRESETS,
+  BUILTIN_PROFILES,
+  PRESETS, // backward compat alias
+  KNOWN_SKILLS,
   HOOK_EVENTS,
   MATCHER_EVENTS,
+  listProfiles,
   loadProfile,
+  loadActiveProfile,
   saveProfile,
+  deleteProfile,
+  setActiveProfile,
+  duplicateProfile,
   validateProfile,
   listCommands,
   readCommand,
   saveCommand,
   deleteCommand,
+  listSkills,
+  readSkill,
+  saveSkill,
+  deleteSkill,
   listAgents,
   readAgent,
   saveAgent,

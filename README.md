@@ -44,7 +44,7 @@ Browser ── WS ──>         │                  │
 - **Streamed responses** — output appears in real time as Claude thinks, writes code, and uses tools
 - **Session management** — pick up old sessions from the dropdown, start new ones, or delete sessions you no longer need. Sessions persist across server restarts
 - **Session resume** — conversation context is maintained across prompts using `--resume`, so follow-up questions work naturally
-- **Permission mode** — click to cycle through `default`, `acceptEdits`, `plan`, `bypassPermissions`, and `dontAsk` — passed as `--permission-mode` to the CLI
+- **Profile selector** — switch between capability profiles from the toolbar. Each profile bundles model, effort level, permission mode, tool restrictions, budget, and system prompts
 - **Working directory** — click the folder icon to set the project directory Claude operates in
 - **AskUserQuestion interception** — when Claude Code asks a question (tool selection, confirmations, clarifications), the question appears in the browser and your answer is injected back into the conversation
 - **Live task & todo panel** — `TaskCreate`, `TaskUpdate`, and `TodoWrite` tool calls are intercepted from the SSE stream and displayed as a live, draggable panel in the Claude tab. Tasks show status icons, descriptions, dependency chains, and auto-unblock. Todos preserve their original ordering. The panel collapses to a header launcher button when dismissed
@@ -55,12 +55,12 @@ Browser ── WS ──>         │                  │
 
 The Capabilities tab lets you control and extend Claude Code directly from the browser:
 
-- **Tool control** — enable/disable any of the 25 built-in tools via checkboxes. Disabled tools are passed as `--disallowedTools` to the CLI. Presets (Full, Safe, Read-only, Minimal) for quick configuration
+- **Named profiles** — create, duplicate, and switch between capability profiles (Full, Safe, Read-only, Minimal built-in). Each profile bundles model, effort level, permission mode, disabled tools, max turns, budget cap, and system prompt overrides — all passed as CLI flags to `claude -p`
+- **Tool control** — enable/disable any of the 26 built-in tools via checkboxes per profile. Disabled tools are passed as `--disallowedTools` to the CLI
+- **Custom skills** — create, edit, and delete auto-invoked skills stored in `.claude/skills/<name>/SKILL.md`. Claude triggers them automatically based on description match. Built-in skills listed for reference
 - **Custom commands** — create, edit, and delete slash commands. Stored as `.md` files in `.claude/commands/`, auto-discovered by Claude Code
 - **Custom agents** — create, edit, and delete sub-agents with custom system prompts, model selection, and tool restrictions. Stored in `.claude/agents/`
 - **Hook editor** — create, edit, and delete lifecycle hooks (PreToolUse, PostToolUse, Stop, etc.) via a form-based editor. Stored in `.claude/settings.local.json`
-- **Model selection** — switch between sonnet, opus, haiku, or custom model IDs
-- **Max turns** — cap the agentic loop iteration count
 
 ### Themes
 
@@ -152,19 +152,23 @@ The session dropdown in the header lists all sessions with their interaction cou
 
 Session metadata (including the Claude CLI session ID for `--resume`) is saved alongside interaction data in `interactions/<session>/meta.json`.
 
-### Permission mode
+### Capability profiles
 
-The permission mode selector in the toolbar cycles through:
+The profile selector in the Claude tab toolbar (and Capabilities tab) lets you switch between named profiles. Each profile bundles:
 
-| Mode                | Behavior |
-|---------------------|----------|
-| `default`           | Asks for confirmation on everything |
-| `acceptEdits`       | Auto-approves file operations; other tools still require permissions |
-| `plan`              | Read-only — can analyze but not modify |
-| `bypassPermissions` | Approves everything |
-| `dontAsk`           | Denies anything not pre-approved — ideal for headless use |
+| Setting             | CLI flag                    | Description |
+|---------------------|-----------------------------|-------------|
+| Model               | `--model`                   | sonnet, opus, haiku, or custom ID |
+| Effort              | `--effort`                  | low, medium, high, max |
+| Permission mode     | `--permission-mode`         | default, acceptEdits, plan, bypassPermissions, dontAsk, auto |
+| Disabled tools      | `--disallowedTools`         | Per-tool enable/disable via checkboxes |
+| Max turns           | `--max-turns`               | Cap agentic loop iterations |
+| Budget              | `--max-budget-usd`          | Dollar spend limit per run |
+| System prompt       | `--append-system-prompt`    | Append to default system prompt |
+| System override     | `--system-prompt`           | Replace default system prompt entirely |
+| Slash commands      | `--disable-slash-commands`  | Enable/disable all built-in skills |
 
-The selected mode is passed as `--permission-mode` to the `claude -p` process.
+Built-in profiles (Full, Safe, Read-only, Minimal) cannot be modified — duplicate them to create editable copies. Custom profiles are stored in `capabilities/profiles/`.
 
 ### Environment variables
 
@@ -200,7 +204,7 @@ src/
   sse-passthrough.js   Transform stream that taps SSE events without buffering
   claude-session.js    Spawns and manages claude -p subprocess with session resume
   dashboard-ws.js      WebSocket server, broadcasts events to connected dashboards
-  capabilities.js      Tool profiles, command/agent/hook CRUD, preset management
+  capabilities.js      Named profiles, tool/command/agent/hook CRUD, built-in presets
   store.js             In-memory interaction store with disk persistence and session management
   utils.js             Header filtering, ID generation, payload sanitization
 public/

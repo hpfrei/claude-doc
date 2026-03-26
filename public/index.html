@@ -144,7 +144,7 @@
             </p>
             <p class="hint">
               <strong>&#128193;</strong> set the working directory &nbsp;
-              <strong>permission-mode</strong> cycle what Claude can do without asking
+              <strong>profile</strong> select which capability profile to use
             </p>
           </div>
         </div>
@@ -156,14 +156,9 @@
           <input type="text" id="chatCwdInput" class="chat-cwd-input hidden" placeholder="/path/to/project">
           <button id="chatCwdSetBtn" class="chat-cwd-set hidden">Set</button>
           <span class="chat-toolbar-sep"></span>
-          <span class="chat-toolbar-label">permission-mode:</span>
-          <button class="chat-perm-btn" id="chatPermBtn" title="Click to cycle permission mode"
-            data-mode="default"
-            data-modes="default,acceptEdits,plan,bypassPermissions,dontAsk"
-            data-comments="asks for confirmation on everything,auto-approves file operations,read-only&#44; analyze only,the nuclear option,denies unpermitted&#44; never blocks">
-            <span class="chat-perm-value">default</span>
-            <span class="chat-perm-comment">asks for confirmation on everything</span>
-          </button>
+          <span class="chat-toolbar-label">profile:</span>
+          <select class="chat-profile-select" id="chatProfileSelect" title="Switch active profile"></select>
+          <span class="chat-profile-info" id="chatProfileInfo"></span>
         </div>
         <div class="chat-status-bar">
           <span id="chatStatus" class="chat-status idle">idle</span>
@@ -188,32 +183,54 @@
   <div id="view-capabilities" class="hidden">
     <div class="ref-container">
 
-      <!-- Capability toolbar -->
+      <!-- Profile toolbar -->
       <div class="cap-toolbar">
         <div class="cap-toolbar-row">
-          <label class="cap-field">Model:
-            <select id="capModel"><option value="">default</option><option value="sonnet">sonnet</option><option value="opus">opus</option><option value="haiku">haiku</option></select>
+          <label class="cap-field">Profile:
+            <select id="capProfileSelect"></select>
           </label>
-          <label class="cap-field">Preset:
-            <select id="capPreset"></select>
-          </label>
-          <label class="cap-field">Max turns:
-            <input type="number" id="capMaxTurns" min="1" max="999" placeholder="--" style="width:50px">
-          </label>
-          <label class="cap-field cap-check-field"><input type="checkbox" id="capSlash" checked> Slash commands</label>
+          <button class="cap-profile-action" id="capNewProfile" title="Create new profile">+ New</button>
+          <button class="cap-profile-action" id="capDuplicateProfile" title="Duplicate current profile">Duplicate</button>
+          <button class="cap-profile-action cap-del-profile" id="capDeleteProfile" title="Delete current profile">Delete</button>
+          <span class="cap-toolbar-actions">
+            <button class="cap-apply-btn hidden" id="capApply">Save Profile</button>
+            <button class="cap-reset-btn hidden" id="capReset">Discard</button>
+          </span>
         </div>
         <div class="cap-toolbar-row">
-          <span class="cap-info">Capabilities = WHICH tools Claude can use. Permission mode (Claude tab) = HOW.</span>
-          <span class="cap-toolbar-actions">
-            <button class="cap-apply-btn hidden" id="capApply">Apply</button>
-            <button class="cap-reset-btn hidden" id="capReset">Reset</button>
-          </span>
+          <label class="cap-field" title="AI model">Model:
+            <select id="capModel"><option value="">default</option><option value="sonnet">sonnet</option><option value="opus">opus</option><option value="haiku">haiku</option></select>
+          </label>
+          <label class="cap-field" title="Reasoning effort level">Effort:
+            <select id="capEffort"><option value="">default</option><option value="low">low</option><option value="medium">medium</option><option value="high">high</option><option value="max">max</option></select>
+          </label>
+          <label class="cap-field" title="Permission mode">Permission:
+            <select id="capPermission"><option value="default">default</option><option value="acceptEdits">acceptEdits</option><option value="plan">plan</option><option value="bypassPermissions">bypassPermissions</option><option value="dontAsk">dontAsk</option><option value="auto">auto</option></select>
+          </label>
+          <label class="cap-field" title="Max agentic loop iterations">Max turns:
+            <input type="number" id="capMaxTurns" min="1" max="999" placeholder="--" style="width:50px">
+          </label>
+          <label class="cap-field" title="Dollar spend limit">Budget $:
+            <input type="number" id="capMaxBudget" min="0.01" step="0.01" placeholder="--" style="width:60px">
+          </label>
+          <label class="cap-field cap-check-field" title="Enable/disable all slash commands"><input type="checkbox" id="capSlash" checked> Slash commands</label>
+        </div>
+        <div class="cap-toolbar-row">
+          <label class="cap-field cap-field-wide" title="Text appended to Claude's system prompt">Append to system prompt:
+            <textarea id="capAppendPrompt" rows="2" placeholder="e.g. Focus on code quality and security..."></textarea>
+          </label>
+        </div>
+        <div class="cap-toolbar-row">
+          <label class="cap-field cap-field-wide" title="Completely replaces the default system prompt (use with caution)">Override system prompt:
+            <textarea id="capSystemPrompt" rows="2" placeholder="Leave empty to use default system prompt"></textarea>
+          </label>
         </div>
       </div>
 
       <!-- Stats bar -->
       <div class="ref-stats">
         <div class="ref-stat"><span class="ref-stat-value" id="capToolCount">25/25</span><span class="ref-stat-label">Tools</span></div>
+        <div class="ref-stat"><span class="ref-stat-value" id="capSkillCount">8</span><span class="ref-stat-label">Skills</span></div>
         <div class="ref-stat"><span class="ref-stat-value" id="capCommandCount">0</span><span class="ref-stat-label">Commands</span></div>
         <div class="ref-stat"><span class="ref-stat-value" id="capAgentCount">0</span><span class="ref-stat-label">Agents</span></div>
         <div class="ref-stat"><span class="ref-stat-value" id="capHookCount">0</span><span class="ref-stat-label">Hooks</span></div>
@@ -222,6 +239,7 @@
       <!-- Section tabs -->
       <div class="ref-nav" id="refNav">
         <button class="ref-nav-btn active" data-section="tools">Tools</button>
+        <button class="ref-nav-btn" data-section="skills">Skills</button>
         <button class="ref-nav-btn" data-section="commands">Commands</button>
         <button class="ref-nav-btn" data-section="agents">Agents</button>
         <button class="ref-nav-btn" data-section="hooks">Hooks</button>
@@ -229,6 +247,10 @@
 
       <!-- ===================== TOOLS ===================== -->
       <div class="ref-panel active" id="ref-tools">
+        <div class="ref-intro">
+          <strong>Tools</strong> are the actions Claude can perform &mdash; reading files, running commands, searching code, etc.
+          Toggle the checkbox on each card to allow or disallow it for the current profile.
+        </div>
 
         <div class="ref-filter" id="refFilter">
           <button class="ref-filter-btn active" data-cat="all">All</button>
@@ -752,8 +774,39 @@
 
       </div><!-- /ref-tools -->
 
+      <!-- ===================== SKILLS ===================== -->
+      <div class="ref-panel" id="ref-skills">
+        <div class="ref-intro">
+          <strong>Skills</strong> are auto-invoked by Claude when the conversation context matches their description trigger.
+          Stored in <code>.claude/skills/&lt;name&gt;/SKILL.md</code> with YAML frontmatter. Unlike commands (user-invoked with <code>/name</code>),
+          skills are model-invoked &mdash; Claude decides when to use them based on the <code>description</code> field.
+          All skills (built-in and custom) are disabled when the profile's "Slash commands" toggle is off.
+          <br><span id="capSkillsStatus">Currently: <strong>enabled</strong></span>
+        </div>
+        <div class="cap-section-header">
+          <span>Custom skills in <code>.claude/skills/</code></span>
+          <button class="cap-new-btn" id="capNewSkill">+ New Skill</button>
+        </div>
+        <div class="cap-list" id="capSkillList"></div>
+        <div class="cap-editor hidden" id="capSkillEditor">
+          <textarea id="capSkillTextarea" spellcheck="false"></textarea>
+          <div class="cap-editor-actions">
+            <button class="cap-save-btn" id="capSkillSave">Save</button>
+            <button class="cap-cancel-btn" id="capSkillCancel">Cancel</button>
+          </div>
+        </div>
+
+        <div class="ref-category-title" style="margin-top:1.5rem">Built-in Skills Reference</div>
+        <div class="ref-grid" id="skillsGrid"></div>
+      </div><!-- /ref-skills -->
+
       <!-- ===================== COMMANDS ===================== -->
       <div class="ref-panel" id="ref-commands">
+        <div class="ref-intro">
+          <strong>Commands</strong> are custom slash commands stored as Markdown files in <code>.claude/commands/</code>.
+          They let you create reusable prompts invoked with <code>/command-name</code>.
+          Use <code>$ARGUMENTS</code> in the template to accept user input.
+        </div>
         <div class="cap-section-header">
           <span>Custom slash commands stored in <code>.claude/commands/</code></span>
           <button class="cap-new-btn" id="capNewCommand">+ New Command</button>
@@ -770,6 +823,10 @@
 
       <!-- ===================== AGENTS ===================== -->
       <div class="ref-panel" id="ref-agents">
+        <div class="ref-intro">
+          <strong>Agents</strong> are specialized sub-agent configurations stored in <code>.claude/agents/</code>.
+          Each defines a role, model, available tools, and instructions. Claude can delegate tasks to matching agents automatically via the Agent tool.
+        </div>
         <div class="cap-section-header">
           <span>Custom agents stored in <code>.claude/agents/</code></span>
           <button class="cap-new-btn" id="capNewAgent">+ New Agent</button>
