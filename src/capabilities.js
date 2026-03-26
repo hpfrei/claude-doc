@@ -277,11 +277,24 @@ function readSkill(cwd, name) {
   return fs.readFileSync(file, 'utf-8');
 }
 
-function saveSkill(cwd, name, content) {
+function saveSkill(cwd, name, content, extraFiles) {
   if (!isValidName(name)) return false;
   const dir = path.join(skillsDir(cwd), name);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'SKILL.md'), content);
+  // Write extra files (templates, scripts, etc.)
+  if (Array.isArray(extraFiles)) {
+    for (const f of extraFiles) {
+      if (!f.name || typeof f.content !== 'string') continue;
+      // Prevent path traversal
+      const clean = path.normalize(f.name).replace(/^(\.\.[/\\])+/, '');
+      if (clean.startsWith('/') || clean.includes('..')) continue;
+      const filePath = path.join(dir, clean);
+      const fileDir = path.dirname(filePath);
+      if (!fs.existsSync(fileDir)) fs.mkdirSync(fileDir, { recursive: true });
+      fs.writeFileSync(filePath, f.content);
+    }
+  }
   return true;
 }
 

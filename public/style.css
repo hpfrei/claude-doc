@@ -1636,6 +1636,273 @@ footer {
 }
 
 /* ============================================================
+   CAPABILITY MODALS (Skill / Agent / Hook editors)
+   ============================================================ */
+
+.cap-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cap-modal {
+  width: 90vw;
+  max-width: 1100px;
+  max-height: 88vh;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.cap-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.cap-modal-header h3 {
+  margin: 0;
+  font-size: 15px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.cap-modal-close {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 20px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+.cap-modal-close:hover { color: var(--red); }
+
+.cap-modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+}
+
+.cap-modal-columns {
+  display: flex;
+  gap: 20px;
+  min-height: 0;
+}
+
+.cap-modal-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cap-modal-docs {
+  width: 340px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  max-height: 60vh;
+  padding-right: 4px;
+}
+
+.cap-modal-docs h4 {
+  font-size: 11px;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 14px 0 6px 0;
+  font-weight: 600;
+}
+.cap-modal-docs h4:first-child { margin-top: 0; }
+
+.cap-modal-pre {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px 10px;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 11px;
+  color: var(--text-dim);
+  overflow-x: auto;
+  white-space: pre;
+  margin: 0 0 6px 0;
+  line-height: 1.5;
+}
+
+.cap-modal-hint {
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.5;
+  margin: 0 0 6px 0;
+}
+.cap-modal-hint code {
+  background: var(--bg);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 10px;
+}
+
+.cap-modal-label {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cap-modal-code {
+  width: 100%;
+  min-height: 300px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  padding: 12px;
+  border-radius: 6px;
+  resize: vertical;
+  box-sizing: border-box;
+  line-height: 1.5;
+  tab-size: 2;
+}
+
+.cap-modal-form-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.cap-modal-form-row label {
+  font-size: 11px;
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cap-modal-form-row select,
+.cap-modal-form-row input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-family: inherit;
+}
+
+.cap-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.cap-modal-footer .cap-save-btn,
+.cap-modal-footer .cap-cancel-btn {
+  font-size: 12px;
+  padding: 6px 20px;
+}
+
+/* Extra files in skill modal */
+.cap-modal-extra-files {
+  margin-top: 6px;
+}
+
+.cap-modal-add-file {
+  font-size: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--cyan);
+  border-radius: 4px;
+  padding: 2px 8px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.cap-modal-add-file:hover {
+  background: var(--bg-hover);
+}
+
+.cap-modal-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.cap-modal-file-entry {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.cap-modal-file-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.cap-modal-file-name {
+  flex: 1;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 11px;
+}
+
+.cap-modal-file-remove {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 6px;
+  line-height: 1.4;
+}
+.cap-modal-file-remove:hover { color: var(--red); border-color: var(--red); }
+
+.cap-modal-file-content {
+  min-height: 80px !important;
+}
+
+/* Responsive: stack columns on narrow screens */
+@media (max-width: 800px) {
+  .cap-modal-columns {
+    flex-direction: column;
+  }
+  .cap-modal-docs {
+    width: 100%;
+    max-height: none;
+  }
+  .cap-modal {
+    width: 96vw;
+    max-height: 94vh;
+  }
+}
+
+/* ============================================================
    TASK PANEL
    ============================================================ */
 

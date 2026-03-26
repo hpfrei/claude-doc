@@ -31,8 +31,7 @@ class DashboardBroadcaster {
           hookEvents: caps.HOOK_EVENTS,
           matcherEvents: caps.MATCHER_EVENTS,
         }));
-        // Send commands, skills, agents, hooks for capabilities tab
-        ws.send(JSON.stringify({ type: 'command:list', commands: caps.listCommands(cwd) }));
+        // Send skills, agents, hooks for capabilities tab
         ws.send(JSON.stringify({ type: 'skill:list', skills: caps.listSkills(cwd) }));
         ws.send(JSON.stringify({ type: 'agent:list', agents: caps.listAgents(cwd) }));
         ws.send(JSON.stringify({ type: 'hook:list', hooks: caps.listHooks(cwd) }));
@@ -130,29 +129,13 @@ class DashboardBroadcaster {
             } else {
               ws.send(JSON.stringify({ type: 'chat:error', text: `Cannot duplicate profile: invalid name or source` }));
             }
-          // --- Commands ---
-          } else if (msg.type === 'command:list') {
-            const cwd = this.claudeSession?.cwd || process.cwd();
-            ws.send(JSON.stringify({ type: 'command:list', commands: caps.listCommands(cwd) }));
-          } else if (msg.type === 'command:save') {
-            const cwd = this.claudeSession?.cwd || process.cwd();
-            const ok = caps.saveCommand(cwd, msg.name, msg.content);
-            if (ok) {
-              this.broadcast({ type: 'command:list', commands: caps.listCommands(cwd) });
-            } else {
-              ws.send(JSON.stringify({ type: 'chat:error', text: `Invalid command name: ${msg.name}` }));
-            }
-          } else if (msg.type === 'command:delete') {
-            const cwd = this.claudeSession?.cwd || process.cwd();
-            const ok = caps.deleteCommand(cwd, msg.name);
-            if (ok) this.broadcast({ type: 'command:list', commands: caps.listCommands(cwd) });
           // --- Skills ---
           } else if (msg.type === 'skill:list') {
             const cwd = this.claudeSession?.cwd || process.cwd();
             ws.send(JSON.stringify({ type: 'skill:list', skills: caps.listSkills(cwd) }));
           } else if (msg.type === 'skill:save') {
             const cwd = this.claudeSession?.cwd || process.cwd();
-            const ok = caps.saveSkill(cwd, msg.name, msg.content);
+            const ok = caps.saveSkill(cwd, msg.name, msg.content, msg.extraFiles);
             if (ok) {
               this.broadcast({ type: 'skill:list', skills: caps.listSkills(cwd) });
             } else {
