@@ -95,6 +95,10 @@ class ClaudeSession {
             this.store.saveSessionMeta(this.sessionId);
           }
           this.broadcaster.broadcast({ type: 'chat:event', event });
+          // 'result' is the last meaningful event from claude -p; signal idle immediately
+          if (event.type === 'result') {
+            this.broadcaster.broadcast({ type: 'chat:status', status: 'idle', exitCode: null });
+          }
         } catch {
           // Not valid JSON, send as raw text
           this.broadcaster.broadcast({ type: 'chat:output', text: line });
