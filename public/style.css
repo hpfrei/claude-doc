@@ -1383,13 +1383,6 @@ footer {
 /* Skills status */
 .cap-skills-status strong { color: var(--green); }
 
-/* Tool card checkbox */
-.ref-card-check {
-  margin-right: 8px;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
 .ref-card.disabled {
   opacity: 0.4;
 }
