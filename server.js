@@ -61,7 +61,7 @@ dashboardApp.use(express.static(path.join(__dirname, 'public')));
 const dashboardServer = http.createServer(dashboardApp);
 
 // Claude session (spawns claude -p through the proxy)
-const claudeSession = new ClaudeSession(PROXY_PORT, { broadcast: (...args) => broadcaster.broadcast(...args) });
+const claudeSession = new ClaudeSession(PROXY_PORT, { broadcast: (...args) => broadcaster.broadcast(...args) }, store);
 
 // WebSocket server on dashboard (with auth)
 const wss = new WebSocketServer({ noServer: true });
@@ -85,6 +85,7 @@ claudeSession.broadcaster = broadcaster;
 // Start both servers (proxy on localhost only)
 proxyServer.listen(PROXY_PORT, '127.0.0.1', () => {
   dashboardServer.listen(DASHBOARD_PORT, () => {
+    claudeSession.setReady();
     console.log('');
     console.log('  Claude Code API Proxy running.');
     console.log('');
