@@ -1,5 +1,6 @@
 const { spawn } = require('child_process');
 const fs = require('fs');
+const caps = require('./capabilities');
 
 class ClaudeSession {
   constructor(proxyPort, broadcaster, store) {
@@ -12,6 +13,7 @@ class ClaudeSession {
     this.sessionId = null;
     this.ready = false;
     this.permissionMode = 'default';
+    this.capabilities = caps.loadProfile(process.cwd());
   }
 
   setReady() {
@@ -27,7 +29,7 @@ class ClaudeSession {
       return false;
     }
     this.cwd = dir;
-    this.broadcaster.broadcast({ type: 'chat:settings', cwd: this.cwd, permissionMode: this.permissionMode });
+    this._broadcastSettings();
     return true;
   }
 
@@ -35,8 +37,35 @@ class ClaudeSession {
     const valid = ['default', 'acceptEdits', 'plan', 'bypassPermissions', 'dontAsk'];
     if (!valid.includes(mode)) return false;
     this.permissionMode = mode;
-    this.broadcaster.broadcast({ type: 'chat:settings', cwd: this.cwd, permissionMode: this.permissionMode });
+    this._broadcastSettings();
     return true;
+  }
+
+  setCapabilities(profile) {
+    this.capabilities = caps.validateProfile(profile);
+    caps.saveProfile(process.cwd(), this.capabilities);
+    if (this.running) this.kill();
+    this._broadcastSettings();
+    return true;
+  }
+
+  loadPreset(name) {
+    const preset = caps.PRESETS[name];
+    if (!preset) return false;
+    this.capabilities = { ...preset };
+    caps.saveProfile(process.cwd(), this.capabilities);
+    if (this.running) this.kill();
+    this._broadcastSettings();
+    return true;
+  }
+
+  _broadcastSettings() {
+    this.broadcaster.broadcast({
+      type: 'chat:settings',
+      cwd: this.cwd,
+      permissionMode: this.permissionMode,
+      capabilities: this.capabilities,
+    });
   }
 
   send(prompt) {
@@ -62,6 +91,23 @@ class ClaudeSession {
     }
     if (this.sessionId) {
       args.push('--resume', this.sessionId);
+    }
+    // Capability flags
+    const c = this.capabilities;
+    if (c.disabledTools && c.disabledTools.length > 0) {
+      args.push('--disallowedTools', ...c.disabledTools);
+    }
+    if (c.model) {
+      args.push('--model', c.model);
+    }
+    if (c.disableSlashCommands) {
+      args.push('--disable-slash-commands');
+    }
+    if (c.maxTurns) {
+      args.push('--max-turns', String(c.maxTurns));
+    }
+    if (c.appendSystemPrompt) {
+      args.push('--append-system-prompt', c.appendSystemPrompt);
     }
 
     this.proc = spawn('claude', args, {

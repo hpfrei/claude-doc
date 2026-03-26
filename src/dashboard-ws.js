@@ -1,6 +1,7 @@
 const WebSocket = require('ws');
 const { sanitizeForDashboard } = require('./utils');
 const { pendingQuestions } = require('./proxy');
+const caps = require('./capabilities');
 
 class DashboardBroadcaster {
   constructor(wss, store, claudeSession) {
@@ -19,7 +20,21 @@ class DashboardBroadcaster {
         status: this.claudeSession?.running ? 'running' : 'idle',
       }));
       if (this.claudeSession) {
-        ws.send(JSON.stringify({ type: 'chat:settings', cwd: this.claudeSession.cwd, permissionMode: this.claudeSession.permissionMode }));
+        const cwd = this.claudeSession.cwd;
+        ws.send(JSON.stringify({
+          type: 'chat:settings',
+          cwd,
+          permissionMode: this.claudeSession.permissionMode,
+          capabilities: this.claudeSession.capabilities,
+          presets: Object.values(caps.PRESETS).map(p => ({ name: p.name, label: p.label, description: p.description })),
+          knownTools: caps.KNOWN_TOOLS,
+          hookEvents: caps.HOOK_EVENTS,
+          matcherEvents: caps.MATCHER_EVENTS,
+        }));
+        // Send commands, agents, hooks for capabilities tab
+        ws.send(JSON.stringify({ type: 'command:list', commands: caps.listCommands(cwd) }));
+        ws.send(JSON.stringify({ type: 'agent:list', agents: caps.listAgents(cwd) }));
+        ws.send(JSON.stringify({ type: 'hook:list', hooks: caps.listHooks(cwd) }));
       }
 
       // Send session list and active session
@@ -75,6 +90,56 @@ class DashboardBroadcaster {
             if (pending?.resolve) {
               pending.resolve(msg.answer);
             }
+          // --- Capabilities ---
+          } else if (msg.type === 'chat:setCapabilities' && this.claudeSession) {
+            this.claudeSession.setCapabilities(msg.capabilities);
+          } else if (msg.type === 'chat:loadPreset' && this.claudeSession) {
+            const ok = this.claudeSession.loadPreset(msg.preset);
+            if (!ok) ws.send(JSON.stringify({ type: 'chat:error', text: `Unknown preset: ${msg.preset}` }));
+          // --- Commands ---
+          } else if (msg.type === 'command:list') {
+            const cwd = this.claudeSession?.cwd || process.cwd();
+            ws.send(JSON.stringify({ type: 'command:list', commands: caps.listCommands(cwd) }));
+          } else if (msg.type === 'command:save') {
+            const cwd = this.claudeSession?.cwd || process.cwd();
+            const ok = caps.saveCommand(cwd, msg.name, msg.content);
+            if (ok) {
+              this.broadcast({ type: 'command:list', commands: caps.listCommands(cwd) });
+            } else {
+              ws.send(JSON.stringify({ type: 'chat:error', text: `Invalid command name: ${msg.name}` }));
+            }
+          } else if (msg.type === 'command:delete') {
+            const cwd = this.claudeSession?.cwd || process.cwd();
+            const ok = caps.deleteCommand(cwd, msg.name);
+            if (ok) this.broadcast({ type: 'command:list', commands: caps.listCommands(cwd) });
+          // --- Agents ---
+          } else if (msg.type === 'agent:list') {
+            const cwd = this.claudeSession?.cwd || process.cwd();
+            ws.send(JSON.stringify({ type: 'agent:list', agents: caps.listAgents(cwd) }));
+          } else if (msg.type === 'agent:save') {
+            const cwd = this.claudeSession?.cwd || process.cwd();
+            const ok = caps.saveAgent(cwd, msg.name, msg.content);
+            if (ok) {
+              this.broadcast({ type: 'agent:list', agents: caps.listAgents(cwd) });
+            } else {
+              ws.send(JSON.stringify({ type: 'chat:error', text: `Invalid agent name: ${msg.name}` }));
+            }
+          } else if (msg.type === 'agent:delete') {
+            const cwd = this.claudeSession?.cwd || process.cwd();
+            const ok = caps.deleteAgent(cwd, msg.name);
+            if (ok) this.broadcast({ type: 'agent:list', agents: caps.listAgents(cwd) });
+          // --- Hooks ---
+          } else if (msg.type === 'hook:list') {
+            const cwd = this.claudeSession?.cwd || process.cwd();
+            ws.send(JSON.stringify({ type: 'hook:list', hooks: caps.listHooks(cwd) }));
+          } else if (msg.type === 'hook:save') {
+            const cwd = this.claudeSession?.cwd || process.cwd();
+            caps.saveHook(cwd, msg.hook);
+            this.broadcast({ type: 'hook:list', hooks: caps.listHooks(cwd) });
+          } else if (msg.type === 'hook:delete') {
+            const cwd = this.claudeSession?.cwd || process.cwd();
+            const ok = caps.deleteHook(cwd, msg.event, msg.entryIndex);
+            if (ok) this.broadcast({ type: 'hook:list', hooks: caps.listHooks(cwd) });
           }
         } catch {}
       });
