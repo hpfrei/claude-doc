@@ -1358,7 +1358,7 @@ function updateChatSettings(msg) {
   }
   if (msg.capabilities || msg.profiles) {
     renderCapabilitiesToolbar();
-    renderToolCheckboxes();
+
     renderChatProfileSelect();
     renderSkillsPanel();
   }
@@ -1841,35 +1841,6 @@ function renderSkillsPanel() {
   updateCapabilityStats();
 }
 
-// --- Tool Checkboxes ---
-
-function renderToolCheckboxes() {
-  const c = state.capabilities;
-  if (!c) return;
-  const disabled = new Set(c.disabledTools || []);
-
-  document.querySelectorAll('#ref-tools .ref-card').forEach(card => {
-    const nameEl = card.querySelector('.ref-name');
-    if (!nameEl) return;
-    const toolName = nameEl.textContent.trim();
-    if (!state.knownTools.includes(toolName)) return;
-
-    // Add read-only indicator checkbox if not already present
-    let cb = card.querySelector('.ref-card-check');
-    if (!cb) {
-      cb = document.createElement('input');
-      cb.type = 'checkbox';
-      cb.className = 'ref-card-check';
-      cb.disabled = true;
-      cb.addEventListener('click', (e) => e.stopPropagation());
-      const header = card.querySelector('.ref-card-header');
-      header.insertBefore(cb, header.firstChild);
-    }
-    cb.checked = !disabled.has(toolName);
-    cb.disabled = true;
-    card.classList.toggle('disabled', disabled.has(toolName));
-  });
-}
 
 // --- Skills Panel (CRUD) ---
 
