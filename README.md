@@ -28,6 +28,13 @@ Browser ── WS ──>         │                  │
              claude -p      claude -p       (saves
             (spawned,      (your terminal)   all JSON)
              --resume)
+                │
+    ┌───────────┴───────────┐
+    │  Capability Profile   │    .claude/
+    │  model, effort, perms │    ├── skills/
+    │  tools, budget, prompt│    ├── commands/
+    │  ──> CLI flags        │    ├── agents/
+    └───────────────────────┘    └── hooks
 ```
 
 - **Full request/response capture** — every `/v1/messages` and `/v1/messages/count_tokens` call, with headers, payloads, and timing
