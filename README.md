@@ -15,10 +15,19 @@ I built this to study how Claude Code actually talks to the Anthropic API — wh
 ### API Inspector
 
 ```
-Browser  --->  Dashboard (:3457)  <--- WebSocket --->  Proxy (:3456)  --->  Anthropic API
-                                                          ^
-                                                          |
-                                                    Claude Code CLI
+                          ┌──────────────────┐
+                          │  claude-doc server│
+Browser ── WS ──>         │                  │
+(:3457)                   │  proxy    :3456  │──────>  Anthropic API
+                          │  dashboard :3457 │
+                          └──────┬───────────┘
+                                 │
+                    ┌────────────┼────────────┐
+                    │            │             │
+              Built-in       External      Inspector
+             claude -p      claude -p       (saves
+            (spawned,      (your terminal)   all JSON)
+             --resume)
 ```
 
 - **Full request/response capture** — every `/v1/messages` and `/v1/messages/count_tokens` call, with headers, payloads, and timing
@@ -33,17 +42,20 @@ Browser  --->  Dashboard (:3457)  <--- WebSocket --->  Proxy (:3456)  --->  Anth
 
 - **Browser-based prompting** — send prompts to Claude Code CLI from any device, no terminal needed
 - **Streamed responses** — output appears in real time as Claude thinks, writes code, and uses tools
-- **Persistent conversations** — session context is maintained across prompts using `--resume`, so follow-up questions work naturally. Clear History starts a fresh session
+- **Session management** — pick up old sessions from the dropdown, start new ones, or delete sessions you no longer need. Sessions persist across server restarts
+- **Session resume** — conversation context is maintained across prompts using `--resume`, so follow-up questions work naturally
+- **Permission mode** — click to cycle through `default`, `acceptEdits`, `plan`, `bypassPermissions`, and `dontAsk` — passed as `--permission-mode` to the CLI
+- **Working directory** — click the folder icon to set the project directory Claude operates in
 - **AskUserQuestion interception** — when Claude Code asks a question (tool selection, confirmations, clarifications), the question appears in the browser and your answer is injected back into the conversation
-- **Remote project access** — configure the working directory via the settings panel (gear icon) to point Claude at any project on the machine
 - **Process control** — stop a running session at any time
+- **Architecture diagram** — the welcome screen shows an interactive SVG diagram of how all the pieces connect
 
 ### Themes
 
 Two built-in themes with a toggle in the header (persisted to localStorage):
 
-- **dark** — Tokyo Night inspired dark theme (default)
-- **hpflabs** — Bright checker-paper look with a grid background
+- **bright** — bright checker-paper look with a grid background (default)
+- **dark** — Tokyo Night inspired dark theme
 
 ## Getting started
 
@@ -87,20 +99,22 @@ On startup, an auth token is printed to the console. You'll need it to access th
 
 This starts two servers:
 
-| Server    | Port | Purpose                        |
-|-----------|------|--------------------------------|
-| Proxy     | 3456 | API proxy for Claude Code (localhost only) |
-| Dashboard | 3457 | Web interface (auth required)  |
+| Server    | Port | Binding   | Purpose                          |
+|-----------|------|-----------|----------------------------------|
+| Proxy     | 3456 | localhost | API proxy for Claude Code        |
+| Dashboard | 3457 | 0.0.0.0  | Web interface (auth required)    |
+
+> **Note:** The dashboard binds to all interfaces so you can reach it from other devices. It is protected by the auth token — but do not expose it to untrusted networks without additional safeguards (TLS, VPN, firewall).
 
 ### Use it
 
-**Inspect API calls** — point any Claude Code session at the proxy and watch the traffic:
+**Run Claude Code from the browser** — open `http://localhost:3457`, log in with the auth token, and start prompting. The Claude tab is the default view.
+
+**Inspect API calls** — point any Claude Code session at the proxy and watch the traffic in the Inspector tab:
 
 ```bash
 ANTHROPIC_BASE_URL=http://localhost:3456 claude -p "your prompt"
 ```
-
-**Run Claude Code from the browser** — open `http://localhost:3457`, log in with the auth token, and use the Claude tab. Full conversation context, streamed output, interactive question answering — all from any device with a browser.
 
 ### Authentication
 
@@ -116,13 +130,29 @@ The token is entered once in the browser login page and stored as an HttpOnly co
 AUTH_TOKEN=mysecret npm start
 ```
 
-### Conversation sessions
+### Session management
 
-The Claude tab maintains conversation context across prompts. The session ID is captured from the first response, and subsequent prompts use `--resume` to continue the same conversation. Press **Clear History** to reset the session and start fresh.
+The session dropdown in the header lists all sessions with their interaction count. From here you can:
 
-### Project root
+- **Switch** to an old session — restores the Inspector timeline and chat history, and resumes the Claude CLI conversation
+- **+ New** — starts a fresh session (also cleans up any empty sessions)
+- **Del** — deletes a session and all its saved data (only for non-active sessions)
 
-The Claude tab includes a settings panel (gear icon) where you can set the working directory for the spawned `claude -p` process. This lets you point Claude at any project on the machine. You can also set the default via the `PROJECT_DIR` environment variable.
+Session metadata (including the Claude CLI session ID for `--resume`) is saved alongside interaction data in `interactions/<session>/meta.json`.
+
+### Permission mode
+
+The permission mode selector in the toolbar cycles through:
+
+| Mode                | Behavior |
+|---------------------|----------|
+| `default`           | Asks for confirmation on everything |
+| `acceptEdits`       | Auto-approves file operations; other tools still require permissions |
+| `plan`              | Read-only — can analyze but not modify |
+| `bypassPermissions` | Approves everything |
+| `dontAsk`           | Denies anything not pre-approved — ideal for headless use |
+
+The selected mode is passed as `--permission-mode` to the `claude -p` process.
 
 ### Environment variables
 
@@ -156,20 +186,28 @@ server.js              Main entry — starts proxy + dashboard servers, auth mid
 src/
   proxy.js             Express router, API forwarding, AskUserQuestion interception
   sse-passthrough.js   Transform stream that taps SSE events without buffering
-  claude-session.js    Spawns and manages claude -p subprocess with session continuity
+  claude-session.js    Spawns and manages claude -p subprocess with session resume
   dashboard-ws.js      WebSocket server, broadcasts events to connected dashboards
-  store.js             In-memory interaction store with disk persistence
+  store.js             In-memory interaction store with disk persistence and session management
   utils.js             Header filtering, ID generation, payload sanitization
 public/
   index.html           Dashboard UI (Inspector + Claude + Reference tabs)
   login.html           Auth token login page
   app.js               Client-side state management and rendering
   style.css            Layout and structural styles
+  theme-bright.css     Bright checker-paper theme (default)
   theme-dark.css       Dark theme (Tokyo Night)
-  theme-hpflabs.css    Bright checker-paper theme
   tools.html           Tool schema reference page
 ```
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines. Please read the [Code of Conduct](CODE_OF_CONDUCT.md) before participating.
+
+## Security
+
+See [SECURITY.md](SECURITY.md) for how to report vulnerabilities.
+
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).

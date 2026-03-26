@@ -24,6 +24,7 @@ claude-doc is a local development tool that proxies API traffic. Key areas of co
 
 When running claude-doc, keep in mind:
 
-- The proxy and dashboard bind to `localhost` by default — avoid exposing them to untrusted networks without additional authentication
+- The **proxy** binds to `localhost` only — it is not reachable from other machines
+- The **dashboard** binds to `0.0.0.0` (all interfaces) so you can access it from other devices — it is protected by an auth token, but avoid exposing it to untrusted networks without additional safeguards (TLS, VPN, firewall)
 - API keys are forwarded to the Anthropic API but are never logged or persisted by claude-doc
 - Interaction logs saved to disk may contain sensitive data from your prompts and responses
