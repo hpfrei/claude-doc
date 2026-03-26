@@ -59,73 +59,97 @@
     <div class="chat-container">
       <div class="chat-messages" id="chatMessages">
         <div class="chat-welcome">
-          <svg class="welcome-diagram" viewBox="0 0 520 260" xmlns="http://www.w3.org/2000/svg">
+          <svg class="welcome-diagram" viewBox="0 0 640 380" xmlns="http://www.w3.org/2000/svg">
             <!-- Background -->
-            <rect width="520" height="260" rx="8" fill="var(--bg-surface)" stroke="var(--border)" stroke-width="1"/>
+            <rect width="640" height="380" rx="8" fill="var(--bg-surface)" stroke="var(--border)" stroke-width="1"/>
 
             <!-- Browser / This UI -->
-            <rect x="20" y="20" width="120" height="52" rx="6" fill="var(--bg-hover)" stroke="var(--accent)" stroke-width="1.5"/>
-            <text x="80" y="42" text-anchor="middle" fill="var(--accent)" font-size="11" font-weight="600">Browser</text>
-            <text x="80" y="56" text-anchor="middle" fill="var(--text-dim)" font-size="9">this UI (:3457)</text>
+            <rect x="24" y="24" width="140" height="58" rx="6" fill="var(--bg-hover)" stroke="var(--accent)" stroke-width="1.5"/>
+            <text x="94" y="48" text-anchor="middle" fill="var(--accent)" font-size="13" font-weight="600">Browser</text>
+            <text x="94" y="64" text-anchor="middle" fill="var(--text-dim)" font-size="10">this UI (:3457)</text>
 
             <!-- claude-doc server -->
-            <rect x="190" y="15" width="140" height="62" rx="6" fill="var(--bg-hover)" stroke="var(--green)" stroke-width="1.5"/>
-            <text x="260" y="36" text-anchor="middle" fill="var(--green)" font-size="11" font-weight="600">claude-doc server</text>
-            <text x="260" y="50" text-anchor="middle" fill="var(--text-dim)" font-size="9">proxy :3456</text>
-            <text x="260" y="62" text-anchor="middle" fill="var(--text-dim)" font-size="9">dashboard :3457</text>
+            <rect x="220" y="18" width="170" height="70" rx="6" fill="var(--bg-hover)" stroke="var(--green)" stroke-width="1.5"/>
+            <text x="305" y="40" text-anchor="middle" fill="var(--green)" font-size="13" font-weight="600">claude-doc server</text>
+            <text x="305" y="56" text-anchor="middle" fill="var(--text-dim)" font-size="10">proxy :3456</text>
+            <text x="305" y="70" text-anchor="middle" fill="var(--text-dim)" font-size="10">dashboard :3457</text>
 
             <!-- Anthropic API -->
-            <rect x="380" y="20" width="120" height="52" rx="6" fill="var(--bg-hover)" stroke="var(--purple)" stroke-width="1.5"/>
-            <text x="440" y="42" text-anchor="middle" fill="var(--purple)" font-size="11" font-weight="600">Anthropic API</text>
-            <text x="440" y="56" text-anchor="middle" fill="var(--text-dim)" font-size="9">api.anthropic.com</text>
+            <rect x="450" y="24" width="160" height="58" rx="6" fill="var(--bg-hover)" stroke="var(--purple)" stroke-width="1.5"/>
+            <text x="530" y="48" text-anchor="middle" fill="var(--purple)" font-size="13" font-weight="600">Anthropic API</text>
+            <text x="530" y="64" text-anchor="middle" fill="var(--text-dim)" font-size="10">api.anthropic.com</text>
 
             <!-- Arrow: Browser -> Server -->
-            <line x1="140" y1="46" x2="188" y2="46" stroke="var(--text-dim)" stroke-width="1" marker-end="url(#arrowhead)"/>
-            <text x="164" y="40" text-anchor="middle" fill="var(--text-dim)" font-size="8">WS</text>
+            <line x1="164" y1="53" x2="218" y2="53" stroke="var(--text-dim)" stroke-width="1" marker-end="url(#arrowhead)"/>
+            <text x="191" y="47" text-anchor="middle" fill="var(--text-dim)" font-size="9">WS</text>
 
             <!-- Arrow: Server -> API -->
-            <line x1="330" y1="46" x2="378" y2="46" stroke="var(--text-dim)" stroke-width="1" marker-end="url(#arrowhead)"/>
+            <line x1="390" y1="53" x2="448" y2="53" stroke="var(--text-dim)" stroke-width="1" marker-end="url(#arrowhead)"/>
 
             <!-- Built-in claude -p -->
-            <rect x="30" y="110" width="180" height="52" rx="6" fill="var(--bg-hover)" stroke="var(--cyan)" stroke-width="1.5"/>
-            <text x="120" y="132" text-anchor="middle" fill="var(--cyan)" font-size="11" font-weight="600">claude -p (built-in)</text>
-            <text x="120" y="146" text-anchor="middle" fill="var(--text-dim)" font-size="9">spawned by server, --resume</text>
+            <rect x="30" y="130" width="210" height="58" rx="6" fill="var(--bg-hover)" stroke="var(--cyan)" stroke-width="1.5"/>
+            <text x="135" y="154" text-anchor="middle" fill="var(--cyan)" font-size="13" font-weight="600">claude -p (built-in)</text>
+            <text x="135" y="170" text-anchor="middle" fill="var(--text-dim)" font-size="10">spawned by server, --resume</text>
 
-            <!-- Working directory -->
-            <rect x="30" y="192" width="180" height="48" rx="6" fill="var(--bg-hover)" stroke="var(--orange)" stroke-width="1.5" stroke-dasharray="4,3"/>
-            <text x="120" y="213" text-anchor="middle" fill="var(--orange)" font-size="11" font-weight="600">Working Directory</text>
-            <text x="120" y="227" text-anchor="middle" fill="var(--text-dim)" font-size="9">set via toolbar</text>
+            <!-- Capability Profile -->
+            <rect x="290" y="120" width="175" height="58" rx="6" fill="var(--bg-hover)" stroke="var(--red)" stroke-width="1.5"/>
+            <text x="378" y="142" text-anchor="middle" fill="var(--red)" font-size="12" font-weight="600">Capability Profile</text>
+            <text x="378" y="156" text-anchor="middle" fill="var(--text-dim)" font-size="9">model, effort, perms, tools</text>
+            <text x="378" y="168" text-anchor="middle" fill="var(--text-dim)" font-size="9">budget, system prompt</text>
 
-            <!-- Arrow: Server -> built-in claude -->
-            <line x1="230" y1="77" x2="150" y2="108" stroke="var(--text-dim)" stroke-width="1" marker-end="url(#arrowhead)"/>
-            <text x="180" y="88" text-anchor="middle" fill="var(--text-dim)" font-size="8">spawn</text>
+            <!-- Arrow: Server -> Profile (down) -->
+            <line x1="330" y1="88" x2="358" y2="118" stroke="var(--text-dim)" stroke-width="1" marker-end="url(#arrowhead)"/>
+
+            <!-- Arrow: Profile -> claude -p (CLI flags) -->
+            <line x1="290" y1="149" x2="242" y2="149" stroke="var(--red)" stroke-width="1" marker-end="url(#arrowhead)"/>
+            <text x="266" y="142" text-anchor="middle" fill="var(--red)" font-size="8">CLI flags</text>
+
+            <!-- Arrow: Server -> built-in claude (spawn) -->
+            <line x1="260" y1="88" x2="180" y2="128" stroke="var(--text-dim)" stroke-width="1" marker-end="url(#arrowhead)"/>
+            <text x="208" y="104" text-anchor="middle" fill="var(--text-dim)" font-size="9">spawn</text>
 
             <!-- Arrow: built-in claude -> server proxy -->
-            <path d="M 210 130 Q 270 130 270 79" fill="none" stroke="var(--text-dim)" stroke-width="1" marker-end="url(#arrowhead)"/>
-            <text x="252" y="110" text-anchor="middle" fill="var(--text-dim)" font-size="8">API calls</text>
+            <path d="M 240 148 Q 275 148 275 90" fill="none" stroke="var(--text-dim)" stroke-width="1" marker-end="url(#arrowhead)"/>
+            <text x="272" y="125" text-anchor="middle" fill="var(--text-dim)" font-size="9">API</text>
+
+            <!-- Working directory -->
+            <rect x="24" y="226" width="130" height="54" rx="6" fill="var(--bg-hover)" stroke="var(--orange)" stroke-width="1.5" stroke-dasharray="4,3"/>
+            <text x="89" y="249" text-anchor="middle" fill="var(--orange)" font-size="11" font-weight="600">Working Dir</text>
+            <text x="89" y="264" text-anchor="middle" fill="var(--text-dim)" font-size="9">set via toolbar</text>
+
+            <!-- .claude/ directory -->
+            <rect x="174" y="220" width="155" height="68" rx="6" fill="var(--bg-hover)" stroke="var(--cyan)" stroke-width="1.5" stroke-dasharray="4,3"/>
+            <text x="252" y="239" text-anchor="middle" fill="var(--cyan)" font-size="11" font-weight="600">.claude/</text>
+            <text x="252" y="253" text-anchor="middle" fill="var(--text-dim)" font-size="9">skills/ commands/</text>
+            <text x="252" y="266" text-anchor="middle" fill="var(--text-dim)" font-size="9">agents/ hooks</text>
+            <text x="252" y="279" text-anchor="middle" fill="var(--text-dim)" font-size="8" font-style="italic">auto-discovered</text>
 
             <!-- Arrow: claude -> working dir -->
-            <line x1="120" y1="162" x2="120" y2="190" stroke="var(--text-dim)" stroke-width="1" marker-end="url(#arrowhead)"/>
+            <line x1="100" y1="188" x2="89" y2="224" stroke="var(--text-dim)" stroke-width="1" marker-end="url(#arrowhead)"/>
+
+            <!-- Arrow: claude -> .claude/ -->
+            <line x1="175" y1="188" x2="225" y2="218" stroke="var(--text-dim)" stroke-width="1" marker-end="url(#arrowhead)"/>
 
             <!-- External claude -p -->
-            <rect x="290" y="110" width="210" height="52" rx="6" fill="var(--bg-hover)" stroke="var(--yellow)" stroke-width="1.5" stroke-dasharray="4,3"/>
-            <text x="395" y="130" text-anchor="middle" fill="var(--yellow)" font-size="11" font-weight="600">External claude -p</text>
-            <text x="395" y="144" text-anchor="middle" fill="var(--text-dim)" font-size="9">your terminal, any project</text>
+            <rect x="370" y="204" width="240" height="48" rx="6" fill="var(--bg-hover)" stroke="var(--yellow)" stroke-width="1.5" stroke-dasharray="4,3"/>
+            <text x="490" y="224" text-anchor="middle" fill="var(--yellow)" font-size="11" font-weight="600">External claude -p</text>
+            <text x="490" y="238" text-anchor="middle" fill="var(--text-dim)" font-size="9">your terminal, any project</text>
 
             <!-- Arrow: external -> server proxy -->
-            <path d="M 350 110 Q 310 90 280 79" fill="none" stroke="var(--text-dim)" stroke-width="1" marker-end="url(#arrowhead)"/>
-            <text x="330" y="88" text-anchor="middle" fill="var(--text-dim)" font-size="8">API calls</text>
+            <path d="M 430 204 Q 370 170 320 90" fill="none" stroke="var(--text-dim)" stroke-width="1" marker-end="url(#arrowhead)"/>
+            <text x="390" y="163" text-anchor="middle" fill="var(--text-dim)" font-size="9">API calls</text>
 
             <!-- External command hint -->
-            <rect x="270" y="180" width="240" height="36" rx="4" fill="var(--bg)" stroke="var(--border)" stroke-width="1"/>
-            <text x="390" y="195" text-anchor="middle" fill="var(--yellow)" font-size="8.5" font-family="monospace">ANTHROPIC_BASE_URL=http://localhost:3456</text>
-            <text x="390" y="207" text-anchor="middle" fill="var(--text-dim)" font-size="8.5" font-family="monospace">claude -p "your prompt"</text>
+            <rect x="355" y="270" width="260" height="42" rx="4" fill="var(--bg)" stroke="var(--border)" stroke-width="1"/>
+            <text x="485" y="287" text-anchor="middle" fill="var(--yellow)" font-size="9" font-family="monospace">ANTHROPIC_BASE_URL=http://localhost:3456</text>
+            <text x="485" y="301" text-anchor="middle" fill="var(--text-dim)" font-size="9" font-family="monospace">claude -p "your prompt"</text>
 
             <!-- Arrow: external -> command hint -->
-            <line x1="395" y1="162" x2="395" y2="178" stroke="var(--text-dim)" stroke-width="1" marker-end="url(#arrowhead)"/>
+            <line x1="490" y1="252" x2="490" y2="268" stroke="var(--text-dim)" stroke-width="1" marker-end="url(#arrowhead)"/>
 
-            <!-- Inspector label -->
-            <text x="260" y="250" text-anchor="middle" fill="var(--text-dim)" font-size="9" font-style="italic">All API traffic is recorded and visible in the Inspector tab</text>
+            <!-- Footer labels -->
+            <text x="320" y="345" text-anchor="middle" fill="var(--text-dim)" font-size="10" font-style="italic">All API traffic is recorded and visible in the Inspector tab</text>
+            <text x="320" y="360" text-anchor="middle" fill="var(--text-dim)" font-size="9" font-style="italic">Profiles and capabilities are managed in the Capabilities tab</text>
 
             <!-- Arrowhead marker -->
             <defs>
