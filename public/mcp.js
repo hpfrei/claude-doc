@@ -35,7 +35,7 @@
         mcp.templates = msg.templates || [];
         break;
       case 'mcp:created':
-        openModal(msg.server.slug);
+        openModal(msg.server.slug, msg.server);
         break;
       case 'mcp:loaded':
         mcp.editMeta = msg.server;
@@ -43,6 +43,8 @@
         break;
       case 'mcp:updated':
         mcp.editMeta = msg.server;
+        mcp.unsaved = false;
+        renderActionBar();
         break;
       case 'mcp:error':
         alert(msg.error);
@@ -55,6 +57,7 @@
         break;
       case 'mcp:file:written':
         mcp.unsaved = false;
+        renderActionBar();
         break;
       case 'mcp:status':
         updateServerStatus(msg.slug, msg.status, msg.error);
@@ -239,8 +242,9 @@
 
   // ========== SERVER MODAL ==========
 
-  function openModal(slug) {
+  function openModal(slug, meta) {
     mcp.editing = slug;
+    mcp.editMeta = meta || null;
     mcp.activeTab = mcp.activeTab || 'setup';
     mcp.output = [];
     mcp.testHistory = [];
@@ -250,7 +254,7 @@
     mcp.depOutput = '';
     mcp.files = [];
     mcp.activeFile = null;
-    mcp.unsaved = false;
+    mcp.unsaved = !!meta;  // new servers need save before start
     mcp.logs = { entries: [], total: 0 };
     mcp.logStats = null;
 
@@ -329,7 +333,7 @@
       <input type="text" id="mcpModalName" value="${escHtml(meta.name || mcp.editing || '')}" title="Display name — also determines the slug (directory name)">
       <span class="mcp-action-status"><span class="mcp-status ${status}"></span>${status.charAt(0).toUpperCase() + status.slice(1)}</span>
       <div class="mcp-action-btns">
-        <button class="mcp-action-btn" id="mcpBtnStart" ${running ? 'disabled' : ''} title="Start the server and register with Claude Code">&#9654; Start</button>
+        <button class="mcp-action-btn" id="mcpBtnStart" ${running || mcp.unsaved ? 'disabled' : ''} title="${mcp.unsaved ? 'Save changes before starting' : 'Start the server and register with Claude Code'}">&#9654; Start</button>
         <button class="mcp-action-btn" id="mcpBtnRestart" ${stopped ? 'disabled' : ''} title="Restart with current code — Claude Code connection preserved">&#8635; Restart</button>
         <button class="mcp-action-btn" id="mcpBtnStop" ${stopped ? 'disabled' : ''} title="Stop the server and unregister from Claude Code">&#9724; Stop</button>
         <button class="mcp-action-btn primary" id="mcpBtnSave" title="Save all changes (Ctrl+S). If running, triggers hot-reload.">Save</button>
@@ -577,8 +581,10 @@ z.enum(["a", "b", "c"])
     if (mcp.editMeta) {
       const updates = collectSetupValues();
       sendWs({ type: 'mcp:update', slug: mcp.editing, updates });
+      // Visual feedback — mcp:updated handler sets unsaved=false and re-renders action bar
+      const btn = document.getElementById('mcpBtnSave');
+      if (btn) { btn.textContent = 'Saving...'; btn.disabled = true; }
     }
-    mcp.unsaved = false;
   }
 
   function collectSetupValues() {
