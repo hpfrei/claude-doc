@@ -42,6 +42,7 @@
 
 /* Action bar */
 .mcp-action-bar { display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.mcp-action-label { font-size: 12px; color: var(--text-dim); display: flex; align-items: center; gap: 6px; }
 .mcp-action-bar input[type="text"] { background: var(--bg); border: 1px solid var(--border); color: var(--text-bright); padding: 4px 8px; border-radius: 4px; font-family: inherit; font-size: 13px; font-weight: 600; width: 200px; }
 .mcp-action-status { font-size: 11px; display: flex; align-items: center; gap: 4px; }
 .mcp-action-btns { display: flex; gap: 4px; margin-left: auto; }
