@@ -110,6 +110,14 @@ proxyServer.listen(PROXY_PORT, '127.0.0.1', () => {
   });
 });
 
+// Clean shutdown: unregister MCP servers
+function gracefulShutdown() {
+  mcp.shutdown();
+  process.exit(0);
+}
+process.on('SIGINT', gracefulShutdown);
+process.on('SIGTERM', gracefulShutdown);
+
 process.on('uncaughtException', (err) => {
   console.error('Uncaught exception:', err);
 });

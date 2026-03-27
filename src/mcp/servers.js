@@ -136,7 +136,10 @@ export default server;
     name: slug,
     version: '1.0.0',
     type: 'module',
-    dependencies: {},
+    dependencies: {
+      '@modelcontextprotocol/sdk': '^1.12.1',
+      'zod': '^3.24.4',
+    },
   };
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify(pkg, null, 2));
 }
