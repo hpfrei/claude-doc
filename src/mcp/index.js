@@ -7,12 +7,14 @@ const { spawn } = require('child_process');
 
 let broadcaster = null;
 let opts = {};
+let store = null;
 let serverRunning = false;
 let needsRestart = false;
 
 function init(options) {
   opts = options;
   broadcaster = options.broadcaster;
+  store = options.store;
   broadcaster.mcpHandler = { onConnect, handleMessage };
 
   // Ensure the integrated server directory exists
@@ -122,9 +124,13 @@ function handleMessage(ws, msg, bc) {
       case 'mcp:test': {
         const start = Date.now();
         testTool(msg.tool, msg.params).then(result => {
-          send({ type: 'mcp:test:result', tool: msg.tool, result, latencyMs: Date.now() - start });
+          const latencyMs = Date.now() - start;
+          send({ type: 'mcp:test:result', tool: msg.tool, result, latencyMs });
+          logMcpCall(msg.tool, msg.params, result, latencyMs, 'test');
         }).catch(err => {
-          send({ type: 'mcp:test:result', tool: msg.tool, error: err.message, latencyMs: Date.now() - start });
+          const latencyMs = Date.now() - start;
+          send({ type: 'mcp:test:result', tool: msg.tool, error: err.message, latencyMs });
+          logMcpCall(msg.tool, msg.params, { error: err.message }, latencyMs, 'test');
         });
         break;
       }
@@ -435,4 +441,42 @@ async function testTool(toolName, args) {
   }
 }
 
-module.exports = { init, shutdown };
+// --- Inspector logging for MCP tool calls ---
+
+let mcpCallSeq = 0;
+
+function logMcpCall(toolName, input, result, durationMs, source) {
+  if (!store || !broadcaster) return;
+
+  const id = `mcp-${Date.now()}-${++mcpCallSeq}`;
+  const isError = !!result?.error;
+
+  const interaction = {
+    id,
+    timestamp: Date.now(),
+    endpoint: `mcp://${toolName}`,
+    isMcp: true,
+    mcpSource: source, // 'test' or 'claude-code'
+    request: { tool: toolName, params: input },
+    response: {
+      status: isError ? 500 : 200,
+      body: result,
+    },
+    timing: { startedAt: Date.now() - durationMs, duration: durationMs },
+    status: isError ? 'error' : 'complete',
+    isStreaming: false,
+  };
+
+  store.add(interaction);
+  broadcaster.broadcast({ type: 'interaction:start', interaction: interaction });
+  broadcaster.broadcast({ type: 'interaction:complete', interaction: interaction });
+}
+
+// Called by the bridge when a tool is executed by Claude Code
+function handleBridgeReport(report) {
+  if (report.type === 'tool:call') {
+    logMcpCall(report.tool, report.params, report.result, report.durationMs, 'claude-code');
+  }
+}
+
+module.exports = { init, shutdown, handleBridgeReport };

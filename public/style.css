@@ -295,6 +295,17 @@ aside#timeline {
   flex-shrink: 0;
 }
 
+/* MCP tool call entries in timeline */
+.mcp-call-group { border-left: 2px solid var(--green); }
+.mcp-call-entry { background: color-mix(in srgb, var(--green) 5%, transparent); }
+.mcp-call-entry:hover { background: color-mix(in srgb, var(--green) 10%, transparent); }
+.mcp-call-entry.selected { background: color-mix(in srgb, var(--green) 15%, transparent); }
+.mcp-label { color: var(--green); font-weight: 700; font-size: 10px; letter-spacing: 0.5px; }
+.mcp-tool-name { color: var(--green); font-weight: 600; }
+.mcp-source-tag { font-size: 9px; padding: 1px 5px; border-radius: 3px; }
+.mcp-src-test { color: var(--purple); background: color-mix(in srgb, var(--purple) 12%, transparent); }
+.mcp-src-claude { color: var(--cyan); background: color-mix(in srgb, var(--cyan) 12%, transparent); }
+
 /* Turn link in detail panel */
 .turn-link {
   color: var(--accent);
