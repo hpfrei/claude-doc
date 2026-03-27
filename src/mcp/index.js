@@ -3,9 +3,14 @@ const registrar = require('./registrar');
 const logs = require('./logs');
 const templates = require('./templates');
 const path = require('path');
+const fs = require('fs');
+const { spawn } = require('child_process');
 
 let broadcaster = null;
 let opts = {};
+
+// Track running servers: slug → { startedAt, registered }
+const running = new Map();
 
 function init(options) {
   opts = options;
@@ -16,11 +21,22 @@ function init(options) {
   servers.getServersDir();
 }
 
+function enrichWithStatus(serverList) {
+  return serverList.map(s => ({
+    ...s,
+    status: running.has(s.slug) ? 'running' : 'stopped',
+  }));
+}
+
 function onConnect(ws) {
-  const serverList = servers.listServers();
+  const serverList = enrichWithStatus(servers.listServers());
   const templateList = templates.listTemplates();
   ws.send(JSON.stringify({ type: 'mcp:list', servers: serverList }));
   ws.send(JSON.stringify({ type: 'mcp:templates', templates: templateList }));
+}
+
+function broadcastServerList(broadcast) {
+  broadcast({ type: 'mcp:list', servers: enrichWithStatus(servers.listServers()) });
 }
 
 function handleMessage(ws, msg, bc) {
@@ -31,7 +47,7 @@ function handleMessage(ws, msg, bc) {
     switch (msg.type) {
       // --- Server CRUD ---
       case 'mcp:list':
-        send({ type: 'mcp:list', servers: servers.listServers() });
+        send({ type: 'mcp:list', servers: enrichWithStatus(servers.listServers()) });
         break;
 
       case 'mcp:create': {
@@ -43,7 +59,7 @@ function handleMessage(ws, msg, bc) {
         if (result.error) {
           send({ type: 'mcp:error', error: result.error });
         } else {
-          broadcast({ type: 'mcp:list', servers: servers.listServers() });
+          broadcastServerList(broadcast);
           send({ type: 'mcp:created', server: result });
         }
         break;
@@ -64,21 +80,41 @@ function handleMessage(ws, msg, bc) {
         if (result.error) {
           send({ type: 'mcp:error', error: result.error });
         } else {
-          broadcast({ type: 'mcp:list', servers: servers.listServers() });
+          broadcastServerList(broadcast);
           send({ type: 'mcp:updated', server: result });
         }
         break;
       }
 
       case 'mcp:delete': {
+        // Stop if running
+        if (running.has(msg.slug)) {
+          stopServer(msg.slug);
+        }
         const result = servers.deleteServer(msg.slug);
         if (result.error) {
           send({ type: 'mcp:error', error: result.error });
         } else {
-          broadcast({ type: 'mcp:list', servers: servers.listServers() });
+          broadcastServerList(broadcast);
         }
         break;
       }
+
+      // --- Server Lifecycle ---
+      case 'mcp:start':
+        startServer(msg.slug, send, broadcast);
+        break;
+
+      case 'mcp:stop':
+        stopServer(msg.slug);
+        broadcast({ type: 'mcp:status', slug: msg.slug, status: 'stopped' });
+        broadcastServerList(broadcast);
+        break;
+
+      case 'mcp:restart':
+        stopServer(msg.slug);
+        startServer(msg.slug, send, broadcast);
+        break;
 
       // --- File Operations ---
       case 'mcp:file:list':
@@ -195,8 +231,87 @@ function handleMessage(ws, msg, bc) {
   }
 }
 
+// --- Server Lifecycle ---
+
+function startServer(slug, send, broadcast) {
+  if (running.has(slug)) {
+    send({ type: 'mcp:error', error: 'Server is already running.' });
+    return;
+  }
+
+  const meta = servers.loadServer(slug);
+  if (!meta) {
+    send({ type: 'mcp:error', error: 'Server not found.' });
+    return;
+  }
+
+  const dir = servers.serverDir(slug);
+  const nodeModules = path.join(dir, 'node_modules');
+
+  // Install deps if node_modules doesn't exist
+  if (!fs.existsSync(nodeModules)) {
+    broadcast({ type: 'mcp:status', slug, status: 'installing' });
+    broadcast({ type: 'mcp:output', slug, data: 'Installing dependencies...\n', stream: 'stdout' });
+
+    const install = spawn('npm', ['install'], { cwd: dir, shell: true });
+    install.stdout.on('data', d => broadcast({ type: 'mcp:output', slug, data: d.toString(), stream: 'stdout' }));
+    install.stderr.on('data', d => broadcast({ type: 'mcp:output', slug, data: d.toString(), stream: 'stderr' }));
+    install.on('close', code => {
+      if (code !== 0) {
+        broadcast({ type: 'mcp:status', slug, status: 'error', error: 'npm install failed' });
+        broadcast({ type: 'mcp:output', slug, data: `npm install exited with code ${code}\n`, stream: 'stderr' });
+        broadcastServerList(broadcast);
+        return;
+      }
+      broadcast({ type: 'mcp:output', slug, data: 'Dependencies installed.\n', stream: 'stdout' });
+      finishStart(slug, meta, send, broadcast);
+    });
+  } else {
+    finishStart(slug, meta, send, broadcast);
+  }
+}
+
+function finishStart(slug, meta, send, broadcast) {
+  const appRoot = path.dirname(path.dirname(__dirname));
+  const bridgePath = path.join(appRoot, 'lib', 'mcp-bridge.js');
+  const projectDir = opts.claudeSession?.cwd || process.cwd();
+
+  // Register with Claude Code config
+  const regResult = registrar.register(
+    slug, meta, bridgePath,
+    opts.authToken || '', opts.dashboardPort || 3457, projectDir
+  );
+
+  if (!regResult.ok) {
+    send({ type: 'mcp:error', error: 'Failed to register server.' });
+    return;
+  }
+
+  running.set(slug, { startedAt: Date.now(), registered: true });
+  broadcast({ type: 'mcp:status', slug, status: 'running' });
+  broadcast({ type: 'mcp:output', slug, data: `Registered with Claude Code (${regResult.configPath}).\nServer is ready — Claude Code will spawn it on first tool call.\n`, stream: 'stdout' });
+  broadcastServerList(broadcast);
+}
+
+function stopServer(slug) {
+  const meta = servers.loadServer(slug);
+  const projectDir = opts.claudeSession?.cwd || process.cwd();
+
+  if (meta) {
+    registrar.unregister(slug, meta.scope || 'user', projectDir);
+  }
+
+  running.delete(slug);
+}
+
 function shutdown() {
-  // Phase 2: stop all workers, unregister
+  // Unregister all running servers on dashboard shutdown
+  const projectDir = opts.claudeSession?.cwd || process.cwd();
+  for (const slug of running.keys()) {
+    const meta = servers.loadServer(slug);
+    if (meta) registrar.unregister(slug, meta.scope || 'user', projectDir);
+  }
+  running.clear();
 }
 
 module.exports = { init, shutdown };

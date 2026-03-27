@@ -38,7 +38,10 @@ function instantiate(templateName, targetDir, slug) {
       name: slug,
       version: '1.0.0',
       type: 'module',
-      dependencies: {},
+      dependencies: {
+        '@modelcontextprotocol/sdk': '^1.12.1',
+        'zod': '^3.24.4',
+      },
     };
     if (meta.extraDeps) {
       for (const dep of meta.extraDeps) {
