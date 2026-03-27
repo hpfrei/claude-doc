@@ -203,7 +203,8 @@ export default function register(server) {
     {
 ${params}
     },
-    async ({ ${paramNames} }) => {
+    async (input) => {
+  // input is an object with: { ${paramNames} }
   ${body}
     }
   );
