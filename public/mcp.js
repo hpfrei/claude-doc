@@ -264,6 +264,9 @@
     sendWs({ type: 'mcp:deps:list', slug });
     sendWs({ type: 'mcp:logs', slug, opts: { limit: 50 } });
     sendWs({ type: 'mcp:logs:stats', slug });
+    // Request tools if server is running
+    const srv = mcp.servers.find(s => s.slug === slug);
+    if (srv?.status === 'running') sendWs({ type: 'mcp:tools', slug });
 
     renderModal();
   }
@@ -330,7 +333,7 @@
     const stopped = status === 'stopped';
 
     bar.innerHTML = `
-      <input type="text" id="mcpModalName" value="${escHtml(meta.name || mcp.editing || '')}" title="Display name — also determines the slug (directory name)">
+      <label class="mcp-action-label">Name: <input type="text" id="mcpModalName" value="${escHtml(meta.name || mcp.editing || '')}" title="Display name — also determines the slug (directory name)"></label>
       <span class="mcp-action-status"><span class="mcp-status ${status}"></span>${status.charAt(0).toUpperCase() + status.slice(1)}</span>
       <div class="mcp-action-btns">
         <button class="mcp-action-btn" id="mcpBtnStart" ${running || mcp.unsaved ? 'disabled' : ''} title="${mcp.unsaved ? 'Save changes before starting' : 'Start the server and register with Claude Code'}">&#9654; Start</button>

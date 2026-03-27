@@ -116,6 +116,25 @@ function handleMessage(ws, msg, bc) {
         startServer(msg.slug, send, broadcast);
         break;
 
+      // --- Tool Discovery & Testing ---
+      case 'mcp:tools':
+        probeTools(msg.slug).then(tools => {
+          send({ type: 'mcp:tools', slug: msg.slug, tools });
+        }).catch(err => {
+          send({ type: 'mcp:error', error: `Tool discovery failed: ${err.message}` });
+        });
+        break;
+
+      case 'mcp:test': {
+        const start = Date.now();
+        testTool(msg.slug, msg.tool, msg.params).then(result => {
+          send({ type: 'mcp:test:result', slug: msg.slug, tool: msg.tool, result, latencyMs: Date.now() - start });
+        }).catch(err => {
+          send({ type: 'mcp:test:result', slug: msg.slug, tool: msg.tool, error: err.message, latencyMs: Date.now() - start });
+        });
+        break;
+      }
+
       // --- File Operations ---
       case 'mcp:file:list':
         send({ type: 'mcp:file:list', slug: msg.slug, files: servers.listFiles(msg.slug) });
@@ -291,6 +310,15 @@ function finishStart(slug, meta, send, broadcast) {
   broadcast({ type: 'mcp:status', slug, status: 'running' });
   broadcast({ type: 'mcp:output', slug, data: `Registered with Claude Code (${regResult.configPath}).\nServer is ready — Claude Code will spawn it on first tool call.\n`, stream: 'stdout' });
   broadcastServerList(broadcast);
+
+  // Probe for available tools
+  broadcast({ type: 'mcp:output', slug, data: 'Discovering tools...\n', stream: 'stdout' });
+  probeTools(slug).then(tools => {
+    broadcast({ type: 'mcp:tools', slug, tools });
+    broadcast({ type: 'mcp:output', slug, data: `Found ${tools.length} tool(s): ${tools.map(t => t.name).join(', ')}\n`, stream: 'stdout' });
+  }).catch(err => {
+    broadcast({ type: 'mcp:output', slug, data: `Tool discovery failed: ${err.message}\n`, stream: 'stderr' });
+  });
 }
 
 function stopServer(slug) {
@@ -312,6 +340,103 @@ function shutdown() {
     if (meta) registrar.unregister(slug, meta.scope || 'user', projectDir);
   }
   running.clear();
+}
+
+// --- MCP JSON-RPC helpers (tool discovery & testing) ---
+
+function spawnBridge(slug) {
+  const appRoot = path.dirname(path.dirname(__dirname));
+  const bridgePath = path.join(appRoot, 'lib', 'mcp-bridge.js');
+  return spawn('node', [bridgePath, slug], {
+    stdio: ['pipe', 'pipe', 'pipe'],
+    env: { ...process.env, CLAUDE_DOC_SERVER_SLUG: slug },
+  });
+}
+
+function sendJsonRpc(proc, method, params, id) {
+  const msg = { jsonrpc: '2.0', method };
+  if (id !== undefined) msg.id = id;
+  if (params !== undefined) msg.params = params;
+  proc.stdin.write(JSON.stringify(msg) + '\n');
+}
+
+function waitForResponse(proc, id, timeout = 15000) {
+  return new Promise((resolve, reject) => {
+    let buffer = '';
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error('Timeout waiting for MCP response'));
+    }, timeout);
+
+    function cleanup() {
+      clearTimeout(timer);
+      proc.stdout.removeListener('data', onData);
+      proc.removeListener('error', onError);
+      proc.removeListener('close', onClose);
+    }
+
+    function onData(data) {
+      buffer += data.toString();
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // keep incomplete line
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const msg = JSON.parse(line);
+          if (msg.id === id) {
+            cleanup();
+            if (msg.error) {
+              reject(new Error(msg.error.message || JSON.stringify(msg.error)));
+            } else {
+              resolve(msg.result);
+            }
+            return;
+          }
+        } catch { /* skip non-JSON lines */ }
+      }
+    }
+
+    function onError(err) { cleanup(); reject(err); }
+    function onClose(code) { cleanup(); reject(new Error(`Bridge exited with code ${code}`)); }
+
+    proc.stdout.on('data', onData);
+    proc.on('error', onError);
+    proc.on('close', onClose);
+  });
+}
+
+async function mcpInitialize(proc) {
+  sendJsonRpc(proc, 'initialize', {
+    protocolVersion: '2024-11-05',
+    capabilities: {},
+    clientInfo: { name: 'claude-doc', version: '1.0.0' },
+  }, 1);
+  await waitForResponse(proc, 1);
+  sendJsonRpc(proc, 'notifications/initialized');
+}
+
+async function probeTools(slug) {
+  const proc = spawnBridge(slug);
+  try {
+    await mcpInitialize(proc);
+    sendJsonRpc(proc, 'tools/list', {}, 2);
+    const result = await waitForResponse(proc, 2);
+    return result.tools || [];
+  } finally {
+    proc.kill();
+  }
+}
+
+async function testTool(slug, toolName, args) {
+  const proc = spawnBridge(slug);
+  try {
+    await mcpInitialize(proc);
+    sendJsonRpc(proc, 'tools/call', { name: toolName, arguments: args }, 2);
+    const result = await waitForResponse(proc, 2);
+    return result;
+  } finally {
+    proc.kill();
+  }
 }
 
 module.exports = { init, shutdown };
