@@ -354,7 +354,6 @@
       const setupName = document.getElementById('mcpSetupName');
       if (setupName) setupName.value = e.target.value;
       mcp.unsaved = true;
-      renderActionBar();
     });
   }
 
