@@ -348,9 +348,13 @@
     bar.querySelector('#mcpBtnStop')?.addEventListener('click', () => sendWs({ type: 'mcp:stop', slug: mcp.editing }));
     bar.querySelector('#mcpBtnSave')?.addEventListener('click', saveAll);
     bar.querySelector('#mcpBtnClose')?.addEventListener('click', closeModal);
-    bar.querySelector('#mcpModalName')?.addEventListener('change', (e) => {
+    bar.querySelector('#mcpModalName')?.addEventListener('input', (e) => {
       if (mcp.editMeta) mcp.editMeta.name = e.target.value;
+      // Sync to setup tab name field if visible
+      const setupName = document.getElementById('mcpSetupName');
+      if (setupName) setupName.value = e.target.value;
       mcp.unsaved = true;
+      renderActionBar();
     });
   }
 
@@ -583,6 +587,9 @@ z.enum(["a", "b", "c"])
     // Save meta from Setup tab
     if (mcp.editMeta) {
       const updates = collectSetupValues();
+      // Action bar name takes precedence (always visible, user edits it directly)
+      const modalName = document.getElementById('mcpModalName')?.value?.trim();
+      if (modalName) updates.name = modalName;
       sendWs({ type: 'mcp:update', slug: mcp.editing, updates });
       // Visual feedback — mcp:updated handler sets unsaved=false and re-renders action bar
       const btn = document.getElementById('mcpBtnSave');
