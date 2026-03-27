@@ -96,9 +96,14 @@ class ClaudeSession {
 
       // Build env from server's environment variables
       const env = {};
-      if (Array.isArray(meta.env)) {
-        for (const e of meta.env) {
-          if (e.name && e.value !== undefined) env[e.name] = String(e.value);
+      if (meta.env && typeof meta.env === 'object' && !Array.isArray(meta.env)) {
+        for (const [k, v] of Object.entries(meta.env)) {
+          if (k) env[k] = String(v);
+        }
+      }
+      if (meta.secrets && typeof meta.secrets === 'object') {
+        for (const [k, v] of Object.entries(meta.secrets)) {
+          if (k) env[k] = String(v);
         }
       }
       // Inject dashboard connection info for the bridge
