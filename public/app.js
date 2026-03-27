@@ -521,6 +521,11 @@ function renderTimeline() {
 function appendTurnToTimeline(interaction, idx) {
   if (idx === undefined) idx = state.interactions.length - 1;
 
+  // MCP tool call — render as a distinct entry
+  if (interaction.isMcp) {
+    return appendMcpCallToTimeline(interaction, idx);
+  }
+
   // Turn group container
   const group = document.createElement('div');
   group.className = 'turn-group' + (isNewUserTurn(interaction) ? ' new-user-turn' : '');
@@ -570,6 +575,41 @@ function appendTurnToTimeline(interaction, idx) {
     toolsContainer.appendChild(toolEl);
   });
 
+  timelineList.appendChild(group);
+}
+
+function appendMcpCallToTimeline(interaction, idx) {
+  const group = document.createElement('div');
+  group.className = 'turn-group mcp-call-group';
+  group.dataset.turnId = interaction.id;
+
+  const el = document.createElement('div');
+  el.className = 'timeline-entry turn-entry mcp-call-entry';
+  el.dataset.id = interaction.id;
+
+  const toolName = interaction.request?.tool || 'unknown';
+  const duration = interaction.timing?.duration ? formatDuration(interaction.timing.duration) : '--';
+  const isError = interaction.status === 'error';
+  const source = interaction.mcpSource === 'claude-code' ? 'claude' : 'test';
+
+  el.innerHTML = `
+    <div class="entry-header">
+      <span class="entry-num mcp-label">MCP</span>
+      <span class="entry-badge ${isError ? 'error' : 'complete'}">${isError ? 'error' : 'ok'}</span>
+    </div>
+    <div class="entry-model mcp-tool-name">${escapeHtml(toolName)}</div>
+    <div class="entry-meta">
+      <span class="mcp-source-tag mcp-src-${source}">${source}</span>
+      <span>${duration}</span>
+    </div>
+  `;
+
+  el.addEventListener('click', (e) => {
+    e.stopPropagation();
+    select({ type: 'turn', id: interaction.id });
+  });
+
+  group.appendChild(el);
   timelineList.appendChild(group);
 }
 
@@ -684,7 +724,60 @@ function select(sel) {
 }
 
 // --- Turn detail (mostly same as before) ---
+function renderMcpCallDetail(interaction) {
+  const req = interaction.request || {};
+  const resp = interaction.response || {};
+  const timing = interaction.timing || {};
+  const isError = interaction.status === 'error';
+  const source = interaction.mcpSource === 'claude-code' ? 'Claude Code' : 'Dashboard test';
+
+  let html = '<div class="section-title" style="color:var(--green)">MCP Tool Call</div>';
+  html += `<div class="info-grid">
+    <span class="info-label">Tool</span><span class="info-value" style="color:var(--green);font-weight:700">${escapeHtml(req.tool || 'unknown')}</span>
+    <span class="info-label">Source</span><span class="info-value">${source}</span>
+    <span class="info-label">Status</span><span class="info-value" style="color:var(${isError ? '--red' : '--green'})">${isError ? 'Error' : 'Success'}</span>
+    <span class="info-label">Duration</span><span class="info-value">${timing.duration ? formatDuration(timing.duration) : '--'}</span>
+  </div>`;
+
+  // Input parameters
+  html += '<div class="section-title">Input</div>';
+  if (req.params && Object.keys(req.params).length > 0) {
+    html += `<pre class="json-block">${highlightJSON(req.params)}</pre>`;
+  } else {
+    html += '<p class="info-label">No parameters</p>';
+  }
+
+  // Output
+  html += '<div class="section-title">Output</div>';
+  if (isError && resp.body?.error) {
+    html += `<div class="content-block"><div class="content-block-header" style="color:var(--red)">Error</div>`;
+    html += `<div class="content-block-body"><pre style="white-space:pre-wrap">${escapeHtml(resp.body.error)}</pre></div></div>`;
+  } else if (resp.body) {
+    const content = resp.body.content || [];
+    if (Array.isArray(content)) {
+      for (const block of content) {
+        if (block.type === 'text') {
+          html += `<pre class="json-block" style="white-space:pre-wrap">${escapeHtml(block.text || '')}</pre>`;
+        } else {
+          html += `<pre class="json-block">${highlightJSON(block)}</pre>`;
+        }
+      }
+    } else {
+      html += `<pre class="json-block">${highlightJSON(resp.body)}</pre>`;
+    }
+  } else {
+    html += '<p class="info-label">No output</p>';
+  }
+
+  detailContent.innerHTML = html;
+}
+
 function renderTurnDetail(interaction) {
+  // MCP tool call — show dedicated detail view
+  if (interaction.isMcp) {
+    return renderMcpCallDetail(interaction);
+  }
+
   const req = interaction.request || {};
   const resp = interaction.response || {};
   const timing = interaction.timing || {};

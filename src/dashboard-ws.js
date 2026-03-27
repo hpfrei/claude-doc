@@ -181,7 +181,10 @@ class DashboardBroadcaster {
             const cwd = this.claudeSession?.cwd || process.cwd();
             const ok = caps.deleteHook(cwd, msg.event, msg.entryIndex);
             if (ok) this.broadcast({ type: 'hook:list', hooks: caps.listHooks(cwd) });
-          // --- MCP Servers ---
+          // --- MCP Tools ---
+          } else if (msg.type === 'mcp:bridge:call') {
+            // Bridge reporting a tool call for inspector logging
+            if (this.mcpHandler?.handleBridgeReport) this.mcpHandler.handleBridgeReport(msg);
           } else if (msg.type.startsWith('mcp:')) {
             if (this.mcpHandler) this.mcpHandler.handleMessage(ws, msg, this);
           }
