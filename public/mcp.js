@@ -266,7 +266,7 @@
         <div class="mcp-form-group">
           <h4>Implementation</h4>
           <div class="mcp-form-hint">Write the handler body. It receives the parameters as named arguments and must return MCP content.</div>
-          <div class="mcp-handler-sig">async ({ ${paramNames} }) => {</div>
+          <div class="mcp-handler-sig">async (input) => {  <span style="color:var(--text-dim)">// input = { ${paramNames} }</span></div>
           <textarea id="mcpToolHandler" class="cap-modal-code mcp-handler-editor" spellcheck="false" rows="10">${escHtml(tool.handlerBody || 'return {\n    content: [{ type: "text", text: "Result" }],\n  };')}</textarea>
           <div class="mcp-handler-sig">}</div>
         </div>
