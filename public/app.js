@@ -129,6 +129,9 @@ function isNewUserTurn(interaction) {
 // Compact summary of a tool's input
 function toolSummary(name, input) {
   if (!input) return '';
+  if (name === 'Skill') {
+    return truncate(input.args || '', 45);
+  }
   if (input.file_path) return truncate(input.file_path, 35);
   if (input.command) return truncate(input.command, 35);
   if (input.pattern) return truncate(input.pattern, 35);
@@ -352,6 +355,21 @@ function handleSSEEvent(interactionId, event) {
       const toolIdx = toolCalls.indexOf(match);
       const summaryEl = document.querySelector(`[data-tool-summary="${interactionId}-${toolIdx}"]`);
       if (summaryEl) summaryEl.textContent = toolSummary(match.name, match.input);
+      // Resolve Skill tool entries with the actual skill name
+      if (match.name === 'Skill' && match.input?.skill) {
+        const nameEl = document.querySelector(`[data-tool-name="${interactionId}-${toolIdx}"]`);
+        if (nameEl) nameEl.textContent = `/${match.input.skill}`;
+        const toolEl = document.querySelector(`[data-tool-id="${interactionId}-${toolIdx}"]`);
+        if (toolEl && !toolEl.classList.contains('skill-call')) {
+          toolEl.classList.add('skill-call');
+          if (nameEl) {
+            const tag = document.createElement('span');
+            tag.className = 'tool-entry-tag tag-sk';
+            tag.textContent = 'skill';
+            nameEl.after(tag);
+          }
+        }
+      }
     }
   }
 
@@ -548,7 +566,7 @@ function appendTurnToTimeline(interaction, idx) {
   // Render existing tool calls (for history replay)
   const toolCalls = extractToolCalls(interaction);
   toolCalls.forEach((tc, tIdx) => {
-    const toolEl = createToolEntryEl(interaction.id, tIdx, tc.name, toolSummary(tc.name, tc.input));
+    const toolEl = createToolEntryEl(interaction.id, tIdx, tc.name, toolSummary(tc.name, tc.input), tc.input);
     toolsContainer.appendChild(toolEl);
   });
 
@@ -564,13 +582,16 @@ function appendToolToTimeline(interactionId, toolIdx, name, summary) {
   container.appendChild(toolEl);
 }
 
-function createToolEntryEl(interactionId, toolIdx, name, summary) {
+function createToolEntryEl(interactionId, toolIdx, name, summary, input) {
   const toolEl = document.createElement('div');
-  toolEl.className = 'timeline-entry tool-entry';
+  const isSkill = name === 'Skill' && input?.skill;
+  toolEl.className = 'timeline-entry tool-entry' + (isSkill ? ' skill-call' : '');
   toolEl.dataset.toolId = `${interactionId}-${toolIdx}`;
+  const displayName = isSkill ? `/${input.skill}` : name;
   toolEl.innerHTML = `
     <span class="tool-connector"></span>
-    <span class="tool-entry-name">${escapeHtml(name)}</span>
+    <span class="tool-entry-name" data-tool-name="${interactionId}-${toolIdx}">${escapeHtml(displayName)}</span>
+    ${isSkill ? '<span class="tool-entry-tag tag-sk">skill</span>' : ''}
     <span class="tool-entry-summary" data-tool-summary="${interactionId}-${toolIdx}">${escapeHtml(summary)}</span>
   `;
   toolEl.addEventListener('click', (e) => {
@@ -588,7 +609,7 @@ function rebuildToolEntries(interactionId) {
   if (!interaction) return;
   const toolCalls = extractToolCalls(interaction);
   toolCalls.forEach((tc, tIdx) => {
-    const toolEl = createToolEntryEl(interactionId, tIdx, tc.name, toolSummary(tc.name, tc.input));
+    const toolEl = createToolEntryEl(interactionId, tIdx, tc.name, toolSummary(tc.name, tc.input), tc.input);
     container.appendChild(toolEl);
   });
 }
@@ -791,12 +812,16 @@ function renderToolDetail(interaction, toolIndex) {
   if (!tc) { detailContent.innerHTML = '<p>Tool call not found.</p>'; return; }
 
   let html = '';
+  const isSkill = tc.name === 'Skill' && tc.input?.skill;
 
   // Header
-  html += `<div class="section-title">Tool Call</div>`;
+  html += `<div class="section-title">${isSkill ? 'Skill Invocation' : 'Tool Call'}</div>`;
   html += `<div class="info-grid">
-    <span class="info-label">Tool</span><span class="info-value" style="color:var(--purple);font-weight:700">${escapeHtml(tc.name)}</span>
-    <span class="info-label">Status</span><span class="info-value">${tc.status}</span>
+    <span class="info-label">${isSkill ? 'Skill' : 'Tool'}</span><span class="info-value" style="color:var(${isSkill ? '--cyan' : '--purple'});font-weight:700">${isSkill ? '/' + escapeHtml(tc.input.skill) : escapeHtml(tc.name)}</span>`;
+  if (isSkill && tc.input.args) {
+    html += `<span class="info-label">Arguments</span><span class="info-value">${escapeHtml(tc.input.args)}</span>`;
+  }
+  html += `<span class="info-label">Status</span><span class="info-value">${tc.status}</span>
     <span class="info-label">Turn</span><span class="info-value"><a href="#" class="turn-link" data-turn-id="${interaction.id}">Turn ${state.interactions.indexOf(interaction) + 1}</a></span>
   </div>`;
 
@@ -1326,7 +1351,7 @@ chatCwdInput?.addEventListener('keydown', (e) => {
 chatProfileSelect?.addEventListener('change', (e) => {
   const name = e.target.value;
   if (!name) return;
-  ws?.send(JSON.stringify({ type: 'chat:switchProfile', name }));
+  state.ws?.send(JSON.stringify({ type: 'chat:switchProfile', name }));
 });
 
 function renderChatProfileSelect() {
@@ -1680,7 +1705,7 @@ function updateCapabilityStats() {
 document.getElementById('capProfileSelect')?.addEventListener('change', (e) => {
   const name = e.target.value;
   if (!name) return;
-  ws?.send(JSON.stringify({ type: 'chat:switchProfile', name }));
+  state.ws?.send(JSON.stringify({ type: 'chat:switchProfile', name }));
 });
 
 // --- Profile Modal ---
@@ -1784,7 +1809,7 @@ document.getElementById('capDeleteProfile')?.addEventListener('click', () => {
   if (!name) return;
   if (state.capabilities?.builtin) return alert('Cannot delete built-in profiles. Duplicate it to create an editable copy.');
   if (!confirm(`Delete profile "${name}"? This cannot be undone.`)) return;
-  ws?.send(JSON.stringify({ type: 'profile:delete', name }));
+  state.ws?.send(JSON.stringify({ type: 'profile:delete', name }));
 });
 
 // Save from modal
@@ -1828,8 +1853,8 @@ document.getElementById('pmSave')?.addEventListener('click', () => {
   };
 
   // Send save then switch — sequential on same WS, no race condition
-  ws?.send(JSON.stringify({ type: 'profile:save', profile }));
-  ws?.send(JSON.stringify({ type: 'chat:switchProfile', name }));
+  state.ws?.send(JSON.stringify({ type: 'profile:save', profile }));
+  state.ws?.send(JSON.stringify({ type: 'chat:switchProfile', name }));
   closeProfileModal();
 });
 
@@ -1913,7 +1938,7 @@ document.getElementById('capSkillSave')?.addEventListener('click', () => {
     const fcontent = entry.querySelector('.cap-modal-file-content')?.value;
     if (fname && fcontent != null) extraFiles.push({ name: fname, content: fcontent });
   });
-  ws?.send(JSON.stringify({ type: 'skill:save', name, content, extraFiles }));
+  state.ws?.send(JSON.stringify({ type: 'skill:save', name, content, extraFiles }));
   document.getElementById('skillModal')?.classList.add('hidden');
   state.editingSkill = null;
 });
@@ -1972,7 +1997,7 @@ document.getElementById('capAgentSave')?.addEventListener('click', () => {
   const nameMatch = content.match(/^name:\s*(.+)$/m);
   const name = nameMatch ? nameMatch[1].trim() : null;
   if (!name) return alert('Missing "name:" in frontmatter');
-  ws?.send(JSON.stringify({ type: 'agent:save', name, content }));
+  state.ws?.send(JSON.stringify({ type: 'agent:save', name, content }));
   document.getElementById('agentModal')?.classList.add('hidden');
   state.editingAgent = null;
 });
@@ -2042,7 +2067,7 @@ document.getElementById('capHookSave')?.addEventListener('click', () => {
     hook.entryIndex = state.editingHook.entryIndex;
     hook.hookIndex = state.editingHook.hookIndex;
   }
-  ws?.send(JSON.stringify({ type: 'hook:save', hook }));
+  state.ws?.send(JSON.stringify({ type: 'hook:save', hook }));
   document.getElementById('hookModal')?.classList.add('hidden');
   state.editingHook = null;
 });
@@ -2125,15 +2150,15 @@ document.addEventListener('click', (e) => {
     const kind = delBtn.dataset.kind;
     if (kind === 'skill') {
       if (confirm(`Delete skill ${delBtn.dataset.name}?`)) {
-        ws?.send(JSON.stringify({ type: 'skill:delete', name: delBtn.dataset.name }));
+        state.ws?.send(JSON.stringify({ type: 'skill:delete', name: delBtn.dataset.name }));
       }
     } else if (kind === 'agent') {
       if (confirm(`Delete agent ${delBtn.dataset.name}?`)) {
-        ws?.send(JSON.stringify({ type: 'agent:delete', name: delBtn.dataset.name }));
+        state.ws?.send(JSON.stringify({ type: 'agent:delete', name: delBtn.dataset.name }));
       }
     } else if (kind === 'hook') {
       if (confirm('Delete this hook?')) {
-        ws?.send(JSON.stringify({ type: 'hook:delete', event: delBtn.dataset.event, entryIndex: parseInt(delBtn.dataset.entry) }));
+        state.ws?.send(JSON.stringify({ type: 'hook:delete', event: delBtn.dataset.event, entryIndex: parseInt(delBtn.dataset.entry) }));
       }
     }
   }

@@ -283,6 +283,18 @@ aside#timeline {
 .tool-entry.selected .tool-entry-name { color: var(--purple); }
 .tool-entry.selected .tool-entry-summary { color: var(--text); }
 
+.tool-entry.skill-call .tool-entry-name { color: var(--cyan); max-width: 120px; }
+.tool-entry.skill-call .tool-connector { background: var(--cyan); }
+.tool-entry.skill-call.selected .tool-entry-name { color: var(--cyan); }
+
+.tool-entry-tag {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin-left: 4px;
+  flex-shrink: 0;
+}
+
 /* Turn link in detail panel */
 .turn-link {
   color: var(--accent);
