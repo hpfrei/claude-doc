@@ -92,7 +92,7 @@ function loadTool(slug) {
   return (meta.tools || []).find(t => t.slug === slug) || null;
 }
 
-function saveTool(tool) {
+function saveTool(tool, oldSlug) {
   const meta = readMeta();
   if (!meta) return { error: 'Integrated server not initialized.' };
 
@@ -113,6 +113,17 @@ function saveTool(tool) {
     })),
     handlerBody: tool.handlerBody || `return {\n    content: [{ type: "text", text: "Result from ${tool.name}" }],\n  };`,
   };
+
+  // Handle rename: if oldSlug differs, remove old entry and file
+  if (oldSlug && oldSlug !== slug) {
+    const oldIdx = meta.tools.findIndex(t => t.slug === oldSlug);
+    if (oldIdx >= 0) {
+      const oldTool = meta.tools[oldIdx];
+      meta.tools.splice(oldIdx, 1);
+      const oldFile = path.join(serverDir(), 'tools', oldTool.file);
+      if (fs.existsSync(oldFile)) fs.unlinkSync(oldFile);
+    }
+  }
 
   const idx = meta.tools.findIndex(t => t.slug === slug);
   if (idx >= 0) {

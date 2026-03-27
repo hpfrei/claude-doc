@@ -55,26 +55,8 @@ function handleMessage(ws, msg, bc) {
         send({ type: 'mcp:tool:list', tools: servers.listTools() });
         break;
 
-      case 'mcp:tool:create': {
-        const result = servers.saveTool({
-          name: msg.name,
-          description: msg.description || '',
-          params: msg.params || [{ name: 'input', type: 'string', description: 'Input value', required: true }],
-          handlerBody: msg.handlerBody || null,
-          enabled: true,
-        });
-        if (result.error) {
-          send({ type: 'mcp:error', error: result.error });
-        } else {
-          broadcastToolList();
-          markNeedsRestart();
-          send({ type: 'mcp:tool:created', tool: result });
-        }
-        break;
-      }
-
       case 'mcp:tool:save': {
-        const result = servers.saveTool(msg.tool);
+        const result = servers.saveTool(msg.tool, msg.oldSlug);
         if (result.error) {
           send({ type: 'mcp:error', error: result.error });
         } else {
@@ -123,13 +105,19 @@ function handleMessage(ws, msg, bc) {
         break;
 
       // --- Tool Discovery & Testing ---
-      case 'mcp:tools':
-        probeTools().then(tools => {
-          send({ type: 'mcp:tools', tools });
-        }).catch(err => {
-          send({ type: 'mcp:error', error: `Tool discovery failed: ${err.message}` });
-        });
+      case 'mcp:tools': {
+        const enabledCount = (servers.readMeta()?.tools || []).filter(t => t.enabled).length;
+        if (enabledCount === 0) {
+          send({ type: 'mcp:tools', tools: [] });
+        } else {
+          probeTools().then(tools => {
+            send({ type: 'mcp:tools', tools });
+          }).catch(err => {
+            send({ type: 'mcp:error', error: `Tool discovery failed: ${err.message}` });
+          });
+        }
         break;
+      }
 
       case 'mcp:test': {
         const start = Date.now();
@@ -323,14 +311,19 @@ function finishStart(meta) {
     const configPath = regResult.ok ? regResult.configPath : '(unknown)';
     broadcaster.broadcast({ type: 'mcp:output', data: `Registered with Claude Code (${configPath}).\n`, stream: 'stdout' });
 
-    // Probe tools
-    probeTools().then(tools => {
-      broadcaster.broadcast({ type: 'mcp:tools', tools });
-      const names = tools.map(t => t.name).join(', ');
-      broadcaster.broadcast({ type: 'mcp:output', data: `Found ${tools.length} tool(s): ${names}\n`, stream: 'stdout' });
-    }).catch(err => {
-      broadcaster.broadcast({ type: 'mcp:output', data: `Tool probe failed: ${err.message}\n`, stream: 'stderr' });
-    });
+    // Probe tools (only if there are enabled tools)
+    const enabledTools = (meta.tools || []).filter(t => t.enabled);
+    if (enabledTools.length > 0) {
+      probeTools().then(tools => {
+        broadcaster.broadcast({ type: 'mcp:tools', tools });
+        const names = tools.map(t => t.name).join(', ');
+        broadcaster.broadcast({ type: 'mcp:output', data: `Found ${tools.length} tool(s): ${names}\n`, stream: 'stdout' });
+      }).catch(err => {
+        broadcaster.broadcast({ type: 'mcp:output', data: `Tool probe failed: ${err.message}\n`, stream: 'stderr' });
+      });
+    } else {
+      broadcaster.broadcast({ type: 'mcp:output', data: 'No enabled tools yet. Add tools via the dashboard.\n', stream: 'stdout' });
+    }
   }
 
   console.log('  MCP: Integrated server registered and ready.');

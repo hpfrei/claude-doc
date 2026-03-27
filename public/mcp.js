@@ -26,12 +26,10 @@
         mcp.tools = msg.tools || [];
         renderPanel();
         break;
-      case 'mcp:tool:created':
-        mcp.editTool = msg.tool;
-        openToolModal(msg.tool.slug);
-        break;
       case 'mcp:tool:saved':
         mcp.editTool = msg.tool;
+        mcp.editing = msg.tool.slug;
+        renderModalHeader();
         break;
       case 'mcp:status':
         mcp.status = msg.status || 'stopped';
@@ -157,15 +155,19 @@
     }));
   }
 
-  // ========== NEW TOOL ==========
+  // ========== TOOL MODAL ==========
 
   function createNewTool() {
-    const name = prompt('Tool name (lowercase, hyphens allowed):');
-    if (!name) return;
-    sendWs({ type: 'mcp:tool:create', name: name.trim() });
+    mcp.editTool = {
+      slug: null,
+      name: '',
+      description: '',
+      enabled: true,
+      params: [{ name: 'input', type: 'string', description: '', required: true }],
+      handlerBody: 'return {\n    content: [{ type: "text", text: "Result" }],\n  };',
+    };
+    openToolModal('__new__');
   }
-
-  // ========== TOOL MODAL ==========
 
   function openToolModal(slug) {
     mcp.editing = slug;
@@ -173,7 +175,7 @@
     mcp.testHistory = [];
 
     // Request live tools for testing if server is running
-    if (mcp.status === 'running') sendWs({ type: 'mcp:tools' });
+    if (mcp.status === 'running' && slug !== '__new__') sendWs({ type: 'mcp:tools' });
 
     renderToolModal();
   }
@@ -215,8 +217,9 @@
     const el = document.getElementById('mcpToolHeader');
     if (!el) return;
     const tool = mcp.editTool;
+    const isNew = mcp.editing === '__new__' && !tool?.name;
     el.innerHTML = `
-      <h3>Edit Tool: ${escHtml(tool?.name || mcp.editing)}</h3>
+      <h3>${isNew ? 'New Tool' : 'Edit Tool: ' + escHtml(tool?.name || mcp.editing)}</h3>
       <div class="mcp-tool-modal-actions">
         <button class="mcp-action-btn primary" id="mcpToolSave">Save</button>
         <button class="mcp-action-btn close-btn" id="mcpToolClose">&times;</button>
@@ -392,9 +395,12 @@
   function saveTool() {
     const tool = collectToolForm();
     if (!tool) return;
-    sendWs({ type: 'mcp:tool:save', tool });
+    // Pass oldSlug so backend can handle renames (delete old file)
+    const oldSlug = mcp.editing !== '__new__' ? mcp.editing : undefined;
+    sendWs({ type: 'mcp:tool:save', tool, oldSlug });
     // Update local state for immediate feedback
     mcp.editTool = tool;
+    mcp.editing = tool.slug;
     renderModalHeader();
   }
 
@@ -417,8 +423,10 @@
       });
     });
 
+    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50);
+
     return {
-      slug: mcp.editing,
+      slug,
       name,
       description,
       params,
