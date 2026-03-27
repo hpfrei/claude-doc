@@ -39,7 +39,7 @@
         break;
       case 'mcp:loaded':
         mcp.editMeta = msg.server;
-        if (mcp.editing) renderActiveTab();
+        if (mcp.editing) { renderActionBar(); renderActiveTab(); }
         break;
       case 'mcp:updated':
         mcp.editMeta = msg.server;
