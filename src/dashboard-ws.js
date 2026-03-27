@@ -22,9 +22,9 @@ class DashboardBroadcaster {
       }));
       if (this.claudeSession) {
         const cwd = this.claudeSession.cwd;
-        // Collect available MCP servers for profile editor
+        // Collect available MCP tools for reference
         let mcpServers = [];
-        try { mcpServers = require('./mcp/servers').listServers(); } catch {}
+        try { mcpServers = require('./mcp/servers').listTools(); } catch {}
         ws.send(JSON.stringify({
           type: 'chat:settings',
           cwd,
