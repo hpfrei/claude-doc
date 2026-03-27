@@ -1,42 +1,47 @@
 const servers = require('./servers');
 const registrar = require('./registrar');
 const logs = require('./logs');
-const templates = require('./templates');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
 
 let broadcaster = null;
 let opts = {};
-
-// Track running servers: slug → { startedAt, registered }
-const running = new Map();
+let serverRunning = false;
+let needsRestart = false;
 
 function init(options) {
   opts = options;
   broadcaster = options.broadcaster;
-  // Register this module as the mcp handler on the broadcaster
   broadcaster.mcpHandler = { onConnect, handleMessage };
-  // Ensure servers directory exists
-  servers.getServersDir();
-}
 
-function enrichWithStatus(serverList) {
-  return serverList.map(s => ({
-    ...s,
-    status: running.has(s.slug) ? 'running' : 'stopped',
-  }));
+  // Ensure the integrated server directory exists
+  servers.ensureIntegratedServer();
+
+  // Auto-start after a short delay (let WebSocket server bind first)
+  setTimeout(() => autoStart(), 500);
 }
 
 function onConnect(ws) {
-  const serverList = enrichWithStatus(servers.listServers());
-  const templateList = templates.listTemplates();
-  ws.send(JSON.stringify({ type: 'mcp:list', servers: serverList }));
-  ws.send(JSON.stringify({ type: 'mcp:templates', templates: templateList }));
+  const send = (data) => ws.send(JSON.stringify(data));
+  send({ type: 'mcp:tool:list', tools: servers.listTools() });
+  send({ type: 'mcp:status', status: serverRunning ? 'running' : 'stopped', needsRestart });
+  send({ type: 'mcp:meta', meta: servers.readMeta() });
 }
 
-function broadcastServerList(broadcast) {
-  broadcast({ type: 'mcp:list', servers: enrichWithStatus(servers.listServers()) });
+function broadcastToolList() {
+  broadcaster.broadcast({ type: 'mcp:tool:list', tools: servers.listTools() });
+}
+
+function broadcastStatus() {
+  broadcaster.broadcast({ type: 'mcp:status', status: serverRunning ? 'running' : 'stopped', needsRestart });
+}
+
+function markNeedsRestart() {
+  if (serverRunning) {
+    needsRestart = true;
+    broadcastStatus();
+  }
 }
 
 function handleMessage(ws, msg, bc) {
@@ -45,81 +50,82 @@ function handleMessage(ws, msg, bc) {
 
   try {
     switch (msg.type) {
-      // --- Server CRUD ---
-      case 'mcp:list':
-        send({ type: 'mcp:list', servers: enrichWithStatus(servers.listServers()) });
+      // --- Tool CRUD ---
+      case 'mcp:tool:list':
+        send({ type: 'mcp:tool:list', tools: servers.listTools() });
         break;
 
-      case 'mcp:create': {
-        const result = servers.createServer(
-          msg.name,
-          msg.template,
-          msg.template ? (tpl, dir, slug) => templates.instantiate(tpl, dir, slug) : null
-        );
+      case 'mcp:tool:create': {
+        const result = servers.saveTool({
+          name: msg.name,
+          description: msg.description || '',
+          params: msg.params || [{ name: 'input', type: 'string', description: 'Input value', required: true }],
+          handlerBody: msg.handlerBody || null,
+          enabled: true,
+        });
         if (result.error) {
           send({ type: 'mcp:error', error: result.error });
         } else {
-          broadcastServerList(broadcast);
-          send({ type: 'mcp:created', server: result });
+          broadcastToolList();
+          markNeedsRestart();
+          send({ type: 'mcp:tool:created', tool: result });
         }
         break;
       }
 
-      case 'mcp:load': {
-        const server = servers.loadServer(msg.slug);
-        if (!server) {
-          send({ type: 'mcp:error', error: 'Server not found.' });
+      case 'mcp:tool:save': {
+        const result = servers.saveTool(msg.tool);
+        if (result.error) {
+          send({ type: 'mcp:error', error: result.error });
         } else {
-          send({ type: 'mcp:loaded', server });
+          broadcastToolList();
+          markNeedsRestart();
+          send({ type: 'mcp:tool:saved', tool: result });
         }
         break;
       }
 
-      case 'mcp:update': {
-        const result = servers.updateServer(msg.slug, msg.updates);
+      case 'mcp:tool:delete': {
+        const result = servers.deleteTool(msg.slug);
         if (result.error) {
           send({ type: 'mcp:error', error: result.error });
         } else {
-          broadcastServerList(broadcast);
-          send({ type: 'mcp:updated', server: result });
+          broadcastToolList();
+          markNeedsRestart();
         }
         break;
       }
 
-      case 'mcp:delete': {
-        // Stop if running
-        if (running.has(msg.slug)) {
-          stopServer(msg.slug);
-        }
-        const result = servers.deleteServer(msg.slug);
+      case 'mcp:tool:toggle': {
+        const result = servers.toggleTool(msg.slug, msg.enabled);
         if (result.error) {
           send({ type: 'mcp:error', error: result.error });
         } else {
-          broadcastServerList(broadcast);
+          broadcastToolList();
+          markNeedsRestart();
         }
         break;
       }
 
       // --- Server Lifecycle ---
       case 'mcp:start':
-        startServer(msg.slug, send, broadcast);
+        startServer(send, broadcast);
         break;
 
       case 'mcp:stop':
-        stopServer(msg.slug);
-        broadcast({ type: 'mcp:status', slug: msg.slug, status: 'stopped' });
-        broadcastServerList(broadcast);
+        stopServer();
+        broadcastStatus();
         break;
 
       case 'mcp:restart':
-        stopServer(msg.slug);
-        startServer(msg.slug, send, broadcast);
+        stopServer();
+        startServer(send, broadcast);
         break;
 
       // --- Tool Discovery & Testing ---
       case 'mcp:tools':
-        probeTools(msg.slug).then(tools => {
-          send({ type: 'mcp:tools', slug: msg.slug, tools });
+        probeTools().then(tools => {
+          send({ type: 'mcp:tools', tools });
         }).catch(err => {
           send({ type: 'mcp:error', error: `Tool discovery failed: ${err.message}` });
         });
@@ -127,122 +133,114 @@ function handleMessage(ws, msg, bc) {
 
       case 'mcp:test': {
         const start = Date.now();
-        testTool(msg.slug, msg.tool, msg.params).then(result => {
-          send({ type: 'mcp:test:result', slug: msg.slug, tool: msg.tool, result, latencyMs: Date.now() - start });
+        testTool(msg.tool, msg.params).then(result => {
+          send({ type: 'mcp:test:result', tool: msg.tool, result, latencyMs: Date.now() - start });
         }).catch(err => {
-          send({ type: 'mcp:test:result', slug: msg.slug, tool: msg.tool, error: err.message, latencyMs: Date.now() - start });
+          send({ type: 'mcp:test:result', tool: msg.tool, error: err.message, latencyMs: Date.now() - start });
         });
         break;
       }
 
-      // --- File Operations ---
+      // --- File Operations (extra files) ---
       case 'mcp:file:list':
-        send({ type: 'mcp:file:list', slug: msg.slug, files: servers.listFiles(msg.slug) });
+        send({ type: 'mcp:file:list', files: servers.listFiles() });
         break;
 
       case 'mcp:file:read': {
-        const result = servers.readFile(msg.slug, msg.path);
+        const result = servers.readFile(msg.path);
         if (result.error) {
           send({ type: 'mcp:error', error: result.error });
         } else {
-          send({ type: 'mcp:file:content', slug: msg.slug, ...result });
+          send({ type: 'mcp:file:content', ...result });
         }
         break;
       }
 
       case 'mcp:file:write': {
-        const result = servers.writeFile(msg.slug, msg.path, msg.content);
+        const result = servers.writeFile(msg.path, msg.content);
         if (result.error) {
           send({ type: 'mcp:error', error: result.error });
         } else {
-          send({ type: 'mcp:file:written', slug: msg.slug, path: result.path });
-          // Refresh file list
-          send({ type: 'mcp:file:list', slug: msg.slug, files: servers.listFiles(msg.slug) });
-        }
-        break;
-      }
-
-      case 'mcp:file:delete': {
-        const result = servers.deleteFile(msg.slug, msg.path);
-        if (result.error) {
-          send({ type: 'mcp:error', error: result.error });
-        } else {
-          send({ type: 'mcp:file:list', slug: msg.slug, files: servers.listFiles(msg.slug) });
-        }
-        break;
-      }
-
-      case 'mcp:file:create': {
-        const result = servers.writeFile(msg.slug, msg.path, msg.content || '');
-        if (result.error) {
-          send({ type: 'mcp:error', error: result.error });
-        } else {
-          send({ type: 'mcp:file:list', slug: msg.slug, files: servers.listFiles(msg.slug) });
-          send({ type: 'mcp:file:content', slug: msg.slug, content: msg.content || '', path: result.path });
+          send({ type: 'mcp:file:written', path: result.path });
+          send({ type: 'mcp:file:list', files: servers.listFiles() });
         }
         break;
       }
 
       // --- Logs ---
       case 'mcp:logs': {
-        const dir = servers.serverDir(msg.slug);
+        const dir = servers.serverDir();
         const result = logs.readLogs(dir, msg.opts || {});
-        send({ type: 'mcp:logs:result', slug: msg.slug, ...result });
+        send({ type: 'mcp:logs:result', ...result });
         break;
       }
 
       case 'mcp:logs:stats': {
-        const dir = servers.serverDir(msg.slug);
+        const dir = servers.serverDir();
         const stats = logs.getStats(dir);
-        send({ type: 'mcp:logs:stats', slug: msg.slug, stats });
+        send({ type: 'mcp:logs:stats', stats });
         break;
       }
 
       case 'mcp:logs:clear': {
-        const dir = servers.serverDir(msg.slug);
+        const dir = servers.serverDir();
         logs.clearLogs(dir);
-        send({ type: 'mcp:logs:result', slug: msg.slug, entries: [], total: 0 });
+        send({ type: 'mcp:logs:result', entries: [], total: 0 });
         break;
       }
 
       // --- Dependencies ---
       case 'mcp:deps:list':
-        send({ type: 'mcp:deps:list', slug: msg.slug, deps: servers.listDeps(msg.slug) });
+        send({ type: 'mcp:deps:list', deps: servers.listDeps() });
         break;
 
       case 'mcp:deps:install':
-        send({ type: 'mcp:dep-progress', slug: msg.slug, package: msg.package, status: 'installing', output: '' });
+        send({ type: 'mcp:dep-progress', package: msg.package, status: 'installing', output: '' });
         servers.installDep(
-          msg.slug, msg.package, msg.version,
-          (data) => send({ type: 'mcp:dep-progress', slug: msg.slug, package: msg.package, status: 'installing', output: data }),
+          msg.package, msg.version,
+          (data) => send({ type: 'mcp:dep-progress', package: msg.package, status: 'installing', output: data }),
           (ok) => {
-            send({ type: 'mcp:dep-progress', slug: msg.slug, package: msg.package, status: ok ? 'installed' : 'failed', output: '' });
-            send({ type: 'mcp:deps:list', slug: msg.slug, deps: servers.listDeps(msg.slug) });
+            send({ type: 'mcp:dep-progress', package: msg.package, status: ok ? 'installed' : 'failed', output: '' });
+            send({ type: 'mcp:deps:list', deps: servers.listDeps() });
           }
         );
         break;
 
       case 'mcp:deps:uninstall':
         servers.uninstallDep(
-          msg.slug, msg.package,
-          (data) => send({ type: 'mcp:dep-progress', slug: msg.slug, package: msg.package, status: 'uninstalling', output: data }),
+          msg.package,
+          (data) => send({ type: 'mcp:dep-progress', package: msg.package, status: 'uninstalling', output: data }),
           (ok) => {
-            send({ type: 'mcp:deps:list', slug: msg.slug, deps: servers.listDeps(msg.slug) });
+            send({ type: 'mcp:deps:list', deps: servers.listDeps() });
           }
         );
         break;
 
       case 'mcp:deps:install-all':
-        send({ type: 'mcp:dep-progress', slug: msg.slug, package: '*', status: 'installing', output: '' });
+        send({ type: 'mcp:dep-progress', package: '*', status: 'installing', output: '' });
         servers.installAll(
-          msg.slug,
-          (data) => send({ type: 'mcp:dep-progress', slug: msg.slug, package: '*', status: 'installing', output: data }),
+          (data) => send({ type: 'mcp:dep-progress', package: '*', status: 'installing', output: data }),
           (ok) => {
-            send({ type: 'mcp:dep-progress', slug: msg.slug, package: '*', status: ok ? 'installed' : 'failed', output: '' });
-            send({ type: 'mcp:deps:list', slug: msg.slug, deps: servers.listDeps(msg.slug) });
+            send({ type: 'mcp:dep-progress', package: '*', status: ok ? 'installed' : 'failed', output: '' });
+            send({ type: 'mcp:deps:list', deps: servers.listDeps() });
           }
         );
         break;
+
+      // --- Server meta update (env vars, name) ---
+      case 'mcp:meta:update': {
+        const meta = servers.readMeta();
+        if (meta) {
+          if (msg.updates.env !== undefined) meta.env = msg.updates.env;
+          if (msg.updates.secrets !== undefined) meta.secrets = msg.updates.secrets;
+          if (msg.updates.name !== undefined) meta.name = msg.updates.name;
+          if (msg.updates.scope !== undefined) meta.scope = msg.updates.scope;
+          servers.writeMeta(meta);
+          markNeedsRestart();
+          broadcast({ type: 'mcp:meta', meta });
+        }
+        break;
+      }
     }
   } catch (err) {
     console.error('MCP handler error:', err);
@@ -252,104 +250,116 @@ function handleMessage(ws, msg, bc) {
 
 // --- Server Lifecycle ---
 
-function startServer(slug, send, broadcast) {
-  if (running.has(slug)) {
+function autoStart() {
+  const meta = servers.readMeta();
+  if (!meta) return;
+
+  const dir = servers.serverDir();
+  const nodeModules = path.join(dir, 'node_modules');
+
+  if (!fs.existsSync(nodeModules)) {
+    console.log('  MCP: Installing dependencies...');
+    const install = spawn('npm', ['install'], { cwd: dir, shell: true });
+    install.on('close', code => {
+      if (code === 0) {
+        console.log('  MCP: Dependencies installed.');
+        finishStart(meta);
+      } else {
+        console.error('  MCP: npm install failed.');
+      }
+    });
+  } else {
+    finishStart(meta);
+  }
+}
+
+function startServer(send, broadcast) {
+  if (serverRunning) {
     send({ type: 'mcp:error', error: 'Server is already running.' });
     return;
   }
 
-  const meta = servers.loadServer(slug);
+  const meta = servers.readMeta();
   if (!meta) {
-    send({ type: 'mcp:error', error: 'Server not found.' });
+    send({ type: 'mcp:error', error: 'Integrated server not initialized.' });
     return;
   }
 
-  const dir = servers.serverDir(slug);
+  const dir = servers.serverDir();
   const nodeModules = path.join(dir, 'node_modules');
 
-  // Install deps if node_modules doesn't exist
   if (!fs.existsSync(nodeModules)) {
-    broadcast({ type: 'mcp:status', slug, status: 'installing' });
-    broadcast({ type: 'mcp:output', slug, data: 'Installing dependencies...\n', stream: 'stdout' });
-
+    broadcast({ type: 'mcp:output', data: 'Installing dependencies...\n', stream: 'stdout' });
     const install = spawn('npm', ['install'], { cwd: dir, shell: true });
-    install.stdout.on('data', d => broadcast({ type: 'mcp:output', slug, data: d.toString(), stream: 'stdout' }));
-    install.stderr.on('data', d => broadcast({ type: 'mcp:output', slug, data: d.toString(), stream: 'stderr' }));
+    install.stdout.on('data', d => broadcast({ type: 'mcp:output', data: d.toString(), stream: 'stdout' }));
+    install.stderr.on('data', d => broadcast({ type: 'mcp:output', data: d.toString(), stream: 'stderr' }));
     install.on('close', code => {
       if (code !== 0) {
-        broadcast({ type: 'mcp:status', slug, status: 'error', error: 'npm install failed' });
-        broadcast({ type: 'mcp:output', slug, data: `npm install exited with code ${code}\n`, stream: 'stderr' });
-        broadcastServerList(broadcast);
+        broadcast({ type: 'mcp:output', data: `npm install failed (code ${code})\n`, stream: 'stderr' });
         return;
       }
-      broadcast({ type: 'mcp:output', slug, data: 'Dependencies installed.\n', stream: 'stdout' });
-      finishStart(slug, meta, send, broadcast);
+      finishStart(meta);
     });
   } else {
-    finishStart(slug, meta, send, broadcast);
+    finishStart(meta);
   }
 }
 
-function finishStart(slug, meta, send, broadcast) {
+function finishStart(meta) {
   const appRoot = path.dirname(path.dirname(__dirname));
   const bridgePath = path.join(appRoot, 'lib', 'mcp-bridge.js');
   const projectDir = opts.claudeSession?.cwd || process.cwd();
 
-  // Register with Claude Code config
   const regResult = registrar.register(
-    slug, meta, bridgePath,
+    servers.INTEGRATED_SLUG, meta, bridgePath,
     opts.authToken || '', opts.dashboardPort || 3457, projectDir
   );
 
-  if (!regResult.ok) {
-    send({ type: 'mcp:error', error: 'Failed to register server.' });
-    return;
+  serverRunning = true;
+  needsRestart = false;
+
+  if (broadcaster) {
+    broadcastStatus();
+    const configPath = regResult.ok ? regResult.configPath : '(unknown)';
+    broadcaster.broadcast({ type: 'mcp:output', data: `Registered with Claude Code (${configPath}).\n`, stream: 'stdout' });
+
+    // Probe tools
+    probeTools().then(tools => {
+      broadcaster.broadcast({ type: 'mcp:tools', tools });
+      const names = tools.map(t => t.name).join(', ');
+      broadcaster.broadcast({ type: 'mcp:output', data: `Found ${tools.length} tool(s): ${names}\n`, stream: 'stdout' });
+    }).catch(err => {
+      broadcaster.broadcast({ type: 'mcp:output', data: `Tool probe failed: ${err.message}\n`, stream: 'stderr' });
+    });
   }
 
-  running.set(slug, { startedAt: Date.now(), registered: true });
-  broadcast({ type: 'mcp:status', slug, status: 'running' });
-  broadcast({ type: 'mcp:output', slug, data: `Registered with Claude Code (${regResult.configPath}).\nServer is ready — Claude Code will spawn it on first tool call.\n`, stream: 'stdout' });
-  broadcastServerList(broadcast);
-
-  // Probe for available tools
-  broadcast({ type: 'mcp:output', slug, data: 'Discovering tools...\n', stream: 'stdout' });
-  probeTools(slug).then(tools => {
-    broadcast({ type: 'mcp:tools', slug, tools });
-    broadcast({ type: 'mcp:output', slug, data: `Found ${tools.length} tool(s): ${tools.map(t => t.name).join(', ')}\n`, stream: 'stdout' });
-  }).catch(err => {
-    broadcast({ type: 'mcp:output', slug, data: `Tool discovery failed: ${err.message}\n`, stream: 'stderr' });
-  });
+  console.log('  MCP: Integrated server registered and ready.');
 }
 
-function stopServer(slug) {
-  const meta = servers.loadServer(slug);
+function stopServer() {
+  const meta = servers.readMeta();
   const projectDir = opts.claudeSession?.cwd || process.cwd();
 
   if (meta) {
-    registrar.unregister(slug, meta.scope || 'user', projectDir);
+    registrar.unregister(servers.INTEGRATED_SLUG, meta.scope || 'project', projectDir);
   }
 
-  running.delete(slug);
+  serverRunning = false;
+  needsRestart = false;
 }
 
 function shutdown() {
-  // Unregister all running servers on dashboard shutdown
-  const projectDir = opts.claudeSession?.cwd || process.cwd();
-  for (const slug of running.keys()) {
-    const meta = servers.loadServer(slug);
-    if (meta) registrar.unregister(slug, meta.scope || 'user', projectDir);
-  }
-  running.clear();
+  stopServer();
 }
 
 // --- MCP JSON-RPC helpers (tool discovery & testing) ---
 
-function spawnBridge(slug) {
+function spawnBridge() {
   const appRoot = path.dirname(path.dirname(__dirname));
   const bridgePath = path.join(appRoot, 'lib', 'mcp-bridge.js');
-  return spawn('node', [bridgePath, slug], {
+  return spawn('node', [bridgePath, servers.INTEGRATED_SLUG], {
     stdio: ['pipe', 'pipe', 'pipe'],
-    env: { ...process.env, CLAUDE_DOC_SERVER_SLUG: slug },
+    env: { ...process.env, CLAUDE_DOC_SERVER_SLUG: servers.INTEGRATED_SLUG },
   });
 }
 
@@ -363,10 +373,7 @@ function sendJsonRpc(proc, method, params, id) {
 function waitForResponse(proc, id, timeout = 15000) {
   return new Promise((resolve, reject) => {
     let buffer = '';
-    const timer = setTimeout(() => {
-      cleanup();
-      reject(new Error('Timeout waiting for MCP response'));
-    }, timeout);
+    const timer = setTimeout(() => { cleanup(); reject(new Error('Timeout waiting for MCP response')); }, timeout);
 
     function cleanup() {
       clearTimeout(timer);
@@ -378,21 +385,18 @@ function waitForResponse(proc, id, timeout = 15000) {
     function onData(data) {
       buffer += data.toString();
       const lines = buffer.split('\n');
-      buffer = lines.pop(); // keep incomplete line
+      buffer = lines.pop();
       for (const line of lines) {
         if (!line.trim()) continue;
         try {
           const msg = JSON.parse(line);
           if (msg.id === id) {
             cleanup();
-            if (msg.error) {
-              reject(new Error(msg.error.message || JSON.stringify(msg.error)));
-            } else {
-              resolve(msg.result);
-            }
+            if (msg.error) reject(new Error(msg.error.message || JSON.stringify(msg.error)));
+            else resolve(msg.result);
             return;
           }
-        } catch { /* skip non-JSON lines */ }
+        } catch { /* skip */ }
       }
     }
 
@@ -415,8 +419,8 @@ async function mcpInitialize(proc) {
   sendJsonRpc(proc, 'notifications/initialized');
 }
 
-async function probeTools(slug) {
-  const proc = spawnBridge(slug);
+async function probeTools() {
+  const proc = spawnBridge();
   try {
     await mcpInitialize(proc);
     sendJsonRpc(proc, 'tools/list', {}, 2);
@@ -427,13 +431,12 @@ async function probeTools(slug) {
   }
 }
 
-async function testTool(slug, toolName, args) {
-  const proc = spawnBridge(slug);
+async function testTool(toolName, args) {
+  const proc = spawnBridge();
   try {
     await mcpInitialize(proc);
     sendJsonRpc(proc, 'tools/call', { name: toolName, arguments: args }, 2);
-    const result = await waitForResponse(proc, 2);
-    return result;
+    return await waitForResponse(proc, 2);
   } finally {
     proc.kill();
   }

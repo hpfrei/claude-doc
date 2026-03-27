@@ -2,7 +2,9 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 
-// Base directory for all MCP server data
+// --- Integrated MCP server directory ---
+
+const INTEGRATED_SLUG = 'integrated';
 let serversDir = null;
 
 function getServersDir() {
@@ -13,127 +15,37 @@ function getServersDir() {
   return serversDir;
 }
 
-function slugify(name) {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50);
+function serverDir() {
+  return path.join(getServersDir(), INTEGRATED_SLUG);
 }
 
-function validateSlug(slug) {
-  return /^[a-z0-9][a-z0-9-]*$/.test(slug) && slug.length >= 2 && slug.length <= 50;
+function metaPath() {
+  return path.join(serverDir(), 'meta.json');
 }
 
-function serverDir(slug) {
-  return path.join(getServersDir(), slug);
-}
-
-function metaPath(slug) {
-  return path.join(serverDir(slug), 'meta.json');
-}
-
-function readMeta(slug) {
+function readMeta() {
   try {
-    return JSON.parse(fs.readFileSync(metaPath(slug), 'utf8'));
+    return JSON.parse(fs.readFileSync(metaPath(), 'utf8'));
   } catch { return null; }
 }
 
-function writeMeta(slug, meta) {
+function writeMeta(meta) {
   meta.updatedAt = new Date().toISOString();
-  fs.writeFileSync(metaPath(slug), JSON.stringify(meta, null, 2));
+  fs.writeFileSync(metaPath(), JSON.stringify(meta, null, 2));
 }
 
-// --- CRUD ---
+// --- Integrated server setup ---
 
-function listServers() {
-  const dir = getServersDir();
-  if (!fs.existsSync(dir)) return [];
-  return fs.readdirSync(dir)
-    .filter(name => {
-      const p = path.join(dir, name, 'meta.json');
-      return fs.existsSync(p);
-    })
-    .map(name => {
-      const meta = readMeta(name);
-      return meta ? { slug: name, name: meta.name, icon: meta.icon || '🔧', description: meta.description || '', status: 'stopped', toolCount: 0, ...meta } : null;
-    })
-    .filter(Boolean);
-}
-
-function loadServer(slug) {
-  const meta = readMeta(slug);
-  if (!meta) return null;
-  return { ...meta, slug };
-}
-
-function createServer(name, templateName, templatesFn) {
-  const slug = slugify(name);
-  if (!validateSlug(slug)) return { error: 'Invalid name. Use lowercase letters, numbers, hyphens. Min 2 chars.' };
-
-  const dir = serverDir(slug);
-  if (fs.existsSync(dir)) return { error: `Server "${slug}" already exists.` };
+function ensureIntegratedServer() {
+  const dir = serverDir();
+  if (fs.existsSync(path.join(dir, 'meta.json'))) return readMeta();
 
   fs.mkdirSync(dir, { recursive: true });
+  fs.mkdirSync(path.join(dir, 'tools'), { recursive: true });
   fs.mkdirSync(path.join(dir, 'logs'), { recursive: true });
 
-  // Copy template or use blank default
-  if (templateName && templatesFn) {
-    const ok = templatesFn(templateName, dir, slug);
-    if (!ok) {
-      // Fallback to blank
-      writeDefaultFiles(dir, slug);
-    }
-  } else {
-    writeDefaultFiles(dir, slug);
-  }
-
-  const meta = {
-    slug,
-    name,
-    description: '',
-    icon: '🔧',
-    version: '1.0.0',
-    scope: 'user',
-    autoStart: false,
-    autoRegister: true,
-    env: {},
-    secrets: {},
-    approvalRequired: [],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
-  writeMeta(slug, meta);
-
-  return { slug, ...meta };
-}
-
-function writeDefaultFiles(dir, slug) {
-  // Default server.js
-  const serverCode = `import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod";
-
-const server = new McpServer({
-  name: "${slug}",
-  version: "1.0.0",
-});
-
-server.tool(
-  "hello",
-  "A simple test tool that greets by name",
-  {
-    name: z.string().describe("Name to greet"),
-  },
-  async ({ name }) => {
-    return {
-      content: [{ type: "text", text: \`Hello, \${name}!\` }],
-    };
-  }
-);
-
-export default server;
-`;
-  fs.writeFileSync(path.join(dir, 'server.js'), serverCode);
-
-  // Default package.json
   const pkg = {
-    name: slug,
+    name: 'claude-doc-tools',
     version: '1.0.0',
     type: 'module',
     dependencies: {
@@ -142,34 +54,197 @@ export default server;
     },
   };
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify(pkg, null, 2));
-}
 
-function updateServer(slug, updates) {
-  const meta = readMeta(slug);
-  if (!meta) return { error: 'Server not found.' };
-  Object.assign(meta, updates);
-  writeMeta(slug, meta);
+  const meta = {
+    name: 'claude-doc-tools',
+    version: '1.0.0',
+    scope: 'project',
+    env: {},
+    secrets: {},
+    tools: [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  writeMeta(meta);
+  generateServerJs();
   return meta;
 }
 
-function deleteServer(slug) {
-  const dir = serverDir(slug);
-  if (!fs.existsSync(dir)) return { error: 'Server not found.' };
-  fs.rmSync(dir, { recursive: true, force: true });
+// --- Tool CRUD ---
+
+function slugify(name) {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50);
+}
+
+function validateSlug(slug) {
+  return /^[a-z0-9][a-z0-9-]*$/.test(slug) && slug.length >= 2 && slug.length <= 50;
+}
+
+function listTools() {
+  const meta = readMeta();
+  if (!meta) return [];
+  return meta.tools || [];
+}
+
+function loadTool(slug) {
+  const meta = readMeta();
+  if (!meta) return null;
+  return (meta.tools || []).find(t => t.slug === slug) || null;
+}
+
+function saveTool(tool) {
+  const meta = readMeta();
+  if (!meta) return { error: 'Integrated server not initialized.' };
+
+  const slug = tool.slug || slugify(tool.name);
+  if (!validateSlug(slug)) return { error: 'Invalid tool name. Use lowercase letters, numbers, hyphens. Min 2 chars.' };
+
+  const entry = {
+    slug,
+    name: tool.name,
+    description: tool.description || '',
+    enabled: tool.enabled !== false,
+    file: `${slug}.js`,
+    params: (tool.params || []).map(p => ({
+      name: p.name,
+      type: p.type || 'string',
+      description: p.description || '',
+      required: p.required !== false,
+    })),
+    handlerBody: tool.handlerBody || `return {\n    content: [{ type: "text", text: "Result from ${tool.name}" }],\n  };`,
+  };
+
+  const idx = meta.tools.findIndex(t => t.slug === slug);
+  if (idx >= 0) {
+    meta.tools[idx] = entry;
+  } else {
+    meta.tools.push(entry);
+  }
+
+  writeMeta(meta);
+  writeToolFile(entry);
+  generateServerJs();
+  return entry;
+}
+
+function deleteTool(slug) {
+  const meta = readMeta();
+  if (!meta) return { error: 'Integrated server not initialized.' };
+
+  const idx = meta.tools.findIndex(t => t.slug === slug);
+  if (idx < 0) return { error: 'Tool not found.' };
+
+  const tool = meta.tools[idx];
+  meta.tools.splice(idx, 1);
+  writeMeta(meta);
+
+  const filePath = path.join(serverDir(), 'tools', tool.file);
+  if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+
+  generateServerJs();
   return { ok: true };
 }
 
-// --- File Operations ---
+function toggleTool(slug, enabled) {
+  const meta = readMeta();
+  if (!meta) return { error: 'Integrated server not initialized.' };
+
+  const tool = meta.tools.find(t => t.slug === slug);
+  if (!tool) return { error: 'Tool not found.' };
+
+  tool.enabled = enabled;
+  writeMeta(meta);
+  generateServerJs();
+  return { ok: true };
+}
+
+// --- Code generation ---
+
+function writeToolFile(tool) {
+  const dir = serverDir();
+  const toolsDir = path.join(dir, 'tools');
+  if (!fs.existsSync(toolsDir)) fs.mkdirSync(toolsDir, { recursive: true });
+
+  const params = (tool.params || []).map(p => {
+    let zod;
+    switch (p.type) {
+      case 'number': zod = 'z.number()'; break;
+      case 'boolean': zod = 'z.boolean()'; break;
+      case 'object': zod = 'z.record(z.any())'; break;
+      case 'array': zod = 'z.array(z.string())'; break;
+      default: zod = 'z.string()';
+    }
+    if (p.description) zod += `.describe(${JSON.stringify(p.description)})`;
+    if (!p.required) zod += '.optional()';
+    return `    ${p.name}: ${zod},`;
+  }).join('\n');
+
+  const paramNames = (tool.params || []).map(p => p.name).join(', ');
+  const body = tool.handlerBody || `return {\n    content: [{ type: "text", text: "Result" }],\n  };`;
+
+  const code = `// Auto-generated by claude-doc — handler body is preserved on regeneration.
+import { z } from "zod";
+
+export default function register(server) {
+  server.tool(
+    ${JSON.stringify(tool.name)},
+    ${JSON.stringify(tool.description || '')},
+    {
+${params}
+    },
+    async ({ ${paramNames} }) => {
+  ${body}
+    }
+  );
+}
+`;
+  fs.writeFileSync(path.join(toolsDir, tool.file), code);
+}
+
+function generateServerJs() {
+  const meta = readMeta();
+  if (!meta) return;
+
+  const enabled = (meta.tools || []).filter(t => t.enabled);
+
+  const imports = enabled.map(t => {
+    const varName = toCamel(t.slug);
+    return `import ${varName} from "./tools/${t.file}";`;
+  });
+
+  const registrations = enabled.map(t => `${toCamel(t.slug)}(server);`);
+
+  const code = `// Auto-generated by claude-doc dashboard — do not edit.
+// Manage tools via the dashboard's MCP Tools panel.
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+${imports.join('\n')}
+
+const server = new McpServer({
+  name: ${JSON.stringify(meta.name || 'claude-doc-tools')},
+  version: "1.0.0",
+});
+
+${registrations.join('\n')}
+
+export default server;
+`;
+  fs.writeFileSync(path.join(serverDir(), 'server.js'), code);
+}
+
+function toCamel(slug) {
+  return 'register' + slug.replace(/(^|-)([a-z])/g, (_, _2, c) => c.toUpperCase());
+}
+
+// --- File Operations (generic, for extra files) ---
 
 function sanitizePath(filePath) {
-  // Prevent path traversal
   const normalized = path.normalize(filePath).replace(/\\/g, '/');
   if (normalized.includes('..') || path.isAbsolute(normalized)) return null;
   return normalized;
 }
 
-function listFiles(slug) {
-  const dir = serverDir(slug);
+function listFiles() {
+  const dir = serverDir();
   if (!fs.existsSync(dir)) return [];
   const results = [];
   function walk(currentDir, prefix) {
@@ -188,28 +263,28 @@ function listFiles(slug) {
   return results;
 }
 
-function readFile(slug, filePath) {
+function readFile(filePath) {
   const safe = sanitizePath(filePath);
   if (!safe) return { error: 'Invalid path.' };
-  const full = path.join(serverDir(slug), safe);
+  const full = path.join(serverDir(), safe);
   if (!fs.existsSync(full)) return { error: 'File not found.' };
   return { content: fs.readFileSync(full, 'utf8'), path: safe };
 }
 
-function writeFile(slug, filePath, content) {
+function writeFile(filePath, content) {
   const safe = sanitizePath(filePath);
   if (!safe) return { error: 'Invalid path.' };
-  const full = path.join(serverDir(slug), safe);
+  const full = path.join(serverDir(), safe);
   const dir = path.dirname(full);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(full, content);
   return { ok: true, path: safe };
 }
 
-function deleteFile(slug, filePath) {
+function deleteFile(filePath) {
   const safe = sanitizePath(filePath);
   if (!safe) return { error: 'Invalid path.' };
-  const full = path.join(serverDir(slug), safe);
+  const full = path.join(serverDir(), safe);
   if (!fs.existsSync(full)) return { error: 'File not found.' };
   fs.unlinkSync(full);
   return { ok: true };
@@ -217,15 +292,15 @@ function deleteFile(slug, filePath) {
 
 // --- Dependencies ---
 
-function listDeps(slug) {
+function listDeps() {
   try {
-    const pkg = JSON.parse(fs.readFileSync(path.join(serverDir(slug), 'package.json'), 'utf8'));
-    return Object.entries(pkg.dependencies || {}).map(([name, version]) => ({ name, version, status: 'installed' }));
+    const pkg = JSON.parse(fs.readFileSync(path.join(serverDir(), 'package.json'), 'utf8'));
+    return Object.entries(pkg.dependencies || {}).map(([name, version]) => ({ name, version }));
   } catch { return []; }
 }
 
-function installDep(slug, pkgName, version, onData, onDone) {
-  const dir = serverDir(slug);
+function installDep(pkgName, version, onData, onDone) {
+  const dir = serverDir();
   const arg = version ? `${pkgName}@${version}` : pkgName;
   const proc = spawn('npm', ['install', arg], { cwd: dir, shell: true });
   proc.stdout.on('data', d => onData?.(d.toString()));
@@ -233,16 +308,16 @@ function installDep(slug, pkgName, version, onData, onDone) {
   proc.on('close', code => onDone?.(code === 0));
 }
 
-function uninstallDep(slug, pkgName, onData, onDone) {
-  const dir = serverDir(slug);
+function uninstallDep(pkgName, onData, onDone) {
+  const dir = serverDir();
   const proc = spawn('npm', ['uninstall', pkgName], { cwd: dir, shell: true });
   proc.stdout.on('data', d => onData?.(d.toString()));
   proc.stderr.on('data', d => onData?.(d.toString()));
   proc.on('close', code => onDone?.(code === 0));
 }
 
-function installAll(slug, onData, onDone) {
-  const dir = serverDir(slug);
+function installAll(onData, onDone) {
+  const dir = serverDir();
   const proc = spawn('npm', ['install'], { cwd: dir, shell: true });
   proc.stdout.on('data', d => onData?.(d.toString()));
   proc.stderr.on('data', d => onData?.(d.toString()));
@@ -250,9 +325,10 @@ function installAll(slug, onData, onDone) {
 }
 
 module.exports = {
-  getServersDir, serverDir, slugify, validateSlug,
-  listServers, loadServer, createServer, updateServer, deleteServer,
-  readMeta, writeMeta, writeDefaultFiles,
+  INTEGRATED_SLUG, getServersDir, serverDir, slugify, validateSlug,
+  ensureIntegratedServer, readMeta, writeMeta,
+  listTools, loadTool, saveTool, deleteTool, toggleTool,
+  generateServerJs, writeToolFile,
   listFiles, readFile, writeFile, deleteFile,
   listDeps, installDep, uninstallDep, installAll,
 };

@@ -78,45 +78,46 @@ class ClaudeSession {
    * Build a temp MCP config file for selected servers.
    * Returns the file path, or null if no servers selected.
    */
-  _buildMcpConfig(serverSlugs) {
-    if (!serverSlugs || serverSlugs.length === 0) return null;
-
+  _buildMcpConfig() {
     let mcpServers;
     try {
       mcpServers = require('./mcp/servers');
     } catch { return null; }
 
+    const meta = mcpServers.readMeta();
+    if (!meta) return null;
+
+    const enabledTools = (meta.tools || []).filter(t => t.enabled);
+    if (enabledTools.length === 0) return null;
+
     const appRoot = path.dirname(__dirname);
     const bridgePath = path.join(appRoot, 'lib', 'mcp-bridge.js');
-    const config = { mcpServers: {} };
 
-    for (const slug of serverSlugs) {
-      const meta = mcpServers.loadServer(slug);
-      if (!meta) continue;
-
-      // Build env from server's environment variables
-      const env = {};
-      if (meta.env && typeof meta.env === 'object' && !Array.isArray(meta.env)) {
-        for (const [k, v] of Object.entries(meta.env)) {
-          if (k) env[k] = String(v);
-        }
+    // Build env from server's environment variables
+    const env = {};
+    if (meta.env && typeof meta.env === 'object' && !Array.isArray(meta.env)) {
+      for (const [k, v] of Object.entries(meta.env)) {
+        if (k) env[k] = String(v);
       }
-      if (meta.secrets && typeof meta.secrets === 'object') {
-        for (const [k, v] of Object.entries(meta.secrets)) {
-          if (k) env[k] = String(v);
-        }
-      }
-      // Inject dashboard connection info for the bridge
-      env.CLAUDE_DOC_DASHBOARD_PORT = String(this._dashboardPort || process.env.DASHBOARD_PORT || '3457');
-      env.CLAUDE_DOC_AUTH_TOKEN = String(this._authToken || process.env.AUTH_TOKEN || '');
-      env.CLAUDE_DOC_SERVER_SLUG = slug;
-
-      config.mcpServers[slug] = {
-        command: 'node',
-        args: [bridgePath, slug],
-        env,
-      };
     }
+    if (meta.secrets && typeof meta.secrets === 'object') {
+      for (const [k, v] of Object.entries(meta.secrets)) {
+        if (k) env[k] = String(v);
+      }
+    }
+    env.CLAUDE_DOC_DASHBOARD_PORT = String(this._dashboardPort || process.env.DASHBOARD_PORT || '3457');
+    env.CLAUDE_DOC_AUTH_TOKEN = String(this._authToken || process.env.AUTH_TOKEN || '');
+    env.CLAUDE_DOC_SERVER_SLUG = mcpServers.INTEGRATED_SLUG;
+
+    const config = {
+      mcpServers: {
+        [mcpServers.INTEGRATED_SLUG]: {
+          command: 'node',
+          args: [bridgePath, mcpServers.INTEGRATED_SLUG],
+          env,
+        },
+      },
+    };
 
     if (Object.keys(config.mcpServers).length === 0) return null;
 
@@ -180,7 +181,7 @@ class ClaudeSession {
 
     // MCP server config injection
     this._cleanupMcpConfig();
-    const mcpConfigFile = this._buildMcpConfig(c.mcpServers);
+    const mcpConfigFile = this._buildMcpConfig();
     if (mcpConfigFile) {
       args.push('--mcp-config', mcpConfigFile);
     }
