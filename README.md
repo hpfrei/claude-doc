@@ -31,23 +31,22 @@ I built this to study how Claude Code actually talks to the Anthropic API — wh
          ┌────────────────┼────────────────┐
          │                │                │
   ┌──────┴──────┐  ┌──────┴──────┐  ┌─────┴──────────────────────────┐
-  │ Capability  │  │  .claude/   │  │     MCP Server Manager         │
-  │ Profile     │  │  skills/    │  │                                │
-  │             │  │  agents/    │  │  mcp-servers/<slug>/           │
-  │ model       │  │  hooks      │  │    meta.json, server.js        │
-  │ effort      │  │  commands/  │  │                                │
-  │ permissions │  │  settings   │  │  Worker Host ── IPC ── Workers │
-  │ tools       │  │  .local.json│  │  (fork, hot-reload, approval)  │
+  │ Capability  │  │  .claude/   │  │  Integrated MCP Tool Server    │
+  │ Profile     │  │  skills/    │  │  (claude-doc-tools)            │
+  │             │  │  agents/    │  │                                │
+  │ model       │  │  hooks      │  │  mcp-servers/integrated/       │
+  │ effort      │  │  commands/  │  │    server.js (auto-generated)  │
+  │ permissions │  │  settings   │  │    tools/*.js (one per tool)   │
+  │ tools       │  │  .local.json│  │    meta.json (tool registry)   │
   │ budget      │  └─────────────┘  │                                │
-  │ mcpServers[]│                   │  MCP Bridge (stdio JSON-RPC)   │
+  │             │                   │  MCP Bridge (stdio JSON-RPC)   │
   │  ──> CLI    │                   │  lib/mcp-bridge.js             │
   │     flags   │                   │  Claude Code spawns via        │
-  │  ──> --mcp- │ ── writes ──>    │  --mcp-config temp file        │
-  │     config  │  /tmp/config.json │                                │
-  └─────────────┘                   │  Registrar ── ~/.claude.json   │
-                                    │  Logs ── JSONL daily files     │
-        interactions/               │  Templates ── blank, REST,     │
-        <session>/<seq>.json        │    JSON store, file tools      │
+  │             │                   │  --mcp-config                  │
+  └─────────────┘                   │                                │
+                                    │  Auto-starts with dashboard    │
+        interactions/               │  Registrar ── .mcp.json        │
+        <session>/<seq>.json        │  Inspector logging via WS      │
         (full request/response)     └────────────────────────────────┘
 ```
 
@@ -70,7 +69,7 @@ I built this to study how Claude Code actually talks to the Anthropic API — wh
 - **AskUserQuestion interception** — when Claude Code asks a question (tool selection, confirmations, clarifications), the question appears in the browser and your answer is injected back into the conversation
 - **Live task & todo panel** — `TaskCreate`, `TaskUpdate`, and `TodoWrite` tool calls are intercepted from the SSE stream and displayed as a live, draggable panel in the Claude tab. Tasks show status icons, descriptions, dependency chains, and auto-unblock. Todos preserve their original ordering. The panel collapses to a header launcher button when dismissed
 - **Process control** — stop a running session at any time
-- **Architecture diagram** — the welcome screen shows an interactive SVG diagram of how all the pieces connect
+- **Architecture diagram** — the welcome screen shows an interactive SVG diagram of how all the pieces connect (also available as [`public/architecture.svg`](public/architecture.svg))
 
 ### Capabilities Manager
 
@@ -81,21 +80,21 @@ The Capabilities tab lets you control and extend Claude Code directly from the b
 - **Custom skills** — create, edit, and delete skills stored in `.claude/skills/<name>/SKILL.md` with supporting files (templates, scripts, examples). Claude triggers them automatically based on description match, or users invoke via `/name`. Built-in skills listed for reference
 - **Custom agents** — create, edit, and delete sub-agents with custom system prompts, model selection, and tool restrictions. Stored in `.claude/agents/`
 - **Hook editor** — create, edit, and delete lifecycle hooks (PreToolUse, PostToolUse, Stop, etc.) with three handler types (command, prompt, agent). Stored in `.claude/settings.local.json`
-- **MCP Server Manager** — create, edit, test, and manage custom MCP (Model Context Protocol) tool servers directly from the browser. See the dedicated section below
+- **MCP Tool Manager** — add custom tools to Claude Code via the Model Context Protocol. One integrated server, form-driven tool editor, inline testing. See the dedicated section below
 
-### MCP Server Manager
+### MCP Tool Manager
 
-The MCP Servers tab in Capabilities lets you build custom tool servers that extend Claude Code's capabilities through the Model Context Protocol:
+The MCP Tools section in Capabilities lets you extend Claude Code with custom tools through one integrated MCP server (`claude-doc-tools`):
 
-- **Server CRUD** — create servers from starter templates (blank, REST API wrapper, JSON data store, file tools), edit code in a browser-based editor, manage dependencies, and delete servers. Each server lives in its own `mcp-servers/<slug>/` directory with isolated `node_modules/`
-- **Template picker** — choose from four starter templates when creating a new server. Templates include pre-built tool definitions using the MCP SDK and Zod schemas
-- **Code editor** — edit `server.js` and supporting files directly in the browser. File tree navigation, output panel for server stdout/stderr, and SDK quick reference sidebar
-- **Dependency management** — install/uninstall npm packages per server. The MCP SDK and Zod are provided by the host app (bundled, no install needed)
-- **Testing console** — select a tool from the running server, fill in parameters via a dynamically generated form (based on the tool's Zod schema), execute, and see the result with latency timing
-- **Logs** — all tool calls (from Claude Code and test invocations) are logged as daily JSONL files with filtering, search, and stats (total calls, error rate, average latency)
-- **Profile integration** — each capability profile has an `mcpServers[]` field. Select which MCP servers to enable per profile. Selected servers are written to a temp config file and passed to `claude -p` via `--mcp-config`
+- **One integrated server** — a single MCP server auto-starts with the dashboard and registers with Claude Code. No server management needed — just add tools
+- **Form-driven tool editor** — create tools via a structured form: name, description, typed parameters (string, number, boolean, object, array), and a handler code editor. The `async (input) => {}` signature is auto-generated; you only write the handler body
+- **Auto-generated server.js** — `server.js` is rebuilt automatically from enabled tools. Each tool lives in its own file under `tools/`. The server imports and registers all enabled tools
+- **Enable/disable** — toggle tools on/off with checkboxes. Disabled tools are excluded from `server.js`. A "restart needed" indicator shows when tools change
+- **Inline testing** — test tools directly from the edit modal with parameter inputs and result display including latency timing
+- **Inspector logging** — MCP tool calls (both from dashboard tests and Claude Code usage) appear in the Inspector tab with input/output JSON detail
+- **Dependencies** — shared `npm` packages for all tools. The MCP SDK and Zod are included by default
 
-**Architecture:** Your server code runs in an isolated child process (forked by the Worker Host). A lightweight bridge script (`lib/mcp-bridge.js`) relays JSON-RPC messages between Claude Code and the server through the dashboard's WebSocket connection. The dashboard must be running for Claude Code to reach your custom tools.
+**Architecture:** The integrated server lives in `mcp-servers/integrated/`. A bridge script (`lib/mcp-bridge.js`) is what Claude Code actually spawns via `--mcp-config`. It imports the auto-generated `server.js`, connects via stdio JSON-RPC, and reports tool calls back to the dashboard for inspector logging. The dashboard must be running for Claude Code to reach your custom tools.
 
 ### Themes
 
@@ -202,7 +201,7 @@ The profile selector in the Claude tab toolbar (and Capabilities tab) lets you s
 | System prompt       | `--append-system-prompt`    | Append to default system prompt |
 | System override     | `--system-prompt`           | Replace default system prompt entirely |
 | Slash commands      | `--disable-slash-commands`  | Enable/disable all built-in skills |
-| MCP servers         | `--mcp-config`              | Select which custom MCP tool servers to enable |
+| MCP tools           | *(auto-registered)*         | Integrated server with custom tools, always active |
 
 Built-in profiles (Full, Safe, Read-only, Minimal) cannot be modified — duplicate them to create editable copies. Custom profiles are stored in `capabilities/profiles/`.
 
@@ -245,31 +244,25 @@ src/
   store.js             In-memory interaction store with disk persistence and session management
   utils.js             Header filtering, ID generation, payload sanitization
   mcp/
-    index.js           MCP module entrypoint — init, WS dispatch, shutdown
-    servers.js         Server CRUD, file operations, dependency management
-    registrar.js       Reads/writes ~/.claude.json and .mcp.json for server registration
-    logs.js            JSONL log append, read, filter, stats, rotation
-    templates.js       Template discovery and instantiation
-    worker-host.js     Fork/manage worker processes, IPC relay, approval gate (Phase 2)
-    worker-entry.js    Bootstrap script for forked worker processes (Phase 2)
+    index.js           MCP module entrypoint — init, auto-start, WS dispatch, tool probing
+    servers.js         Tool CRUD, server.js generation, file/dep management
+    registrar.js       Reads/writes ~/.claude.json and .mcp.json for registration
+    logs.js            JSONL log append, read, filter, stats
+    templates.js       Tool template discovery and instantiation
 lib/
-  mcp-bridge.js        Standalone stdio bridge Claude Code spawns via --mcp-config (Phase 2)
-templates/mcp-servers/
-  blank/               Empty server with hello tool
-  rest-api-wrapper/    HTTP GET/POST with configurable BASE_URL
-  json-data-store/     Key-value store backed by JSON file
-  file-tools/          Read, write, list, search files with ROOT_DIR
+  mcp-bridge.js        Stdio bridge Claude Code spawns — imports server.js, reports calls to dashboard
 public/
   index.html           Dashboard UI (Inspector + Claude + Capabilities tabs)
+  architecture.svg     Standalone architecture diagram (also embedded in index.html)
   login.html           Auth token login page
   app.js               Client-side state management and rendering
-  mcp.js               MCP Server Manager frontend module
+  mcp.js               MCP Tool Manager frontend module
   mcp.css              MCP-specific styles
   style.css            Layout and structural styles
   theme-bright.css     Bright checker-paper theme (default)
   theme-dark.css       Dark theme (Tokyo Night)
   tools.html           Tool schema reference page
-mcp-servers/           Runtime storage for user-created MCP servers
+mcp-servers/integrated/  Integrated MCP tool server (auto-generated server.js + tools/)
 ```
 
 ## Contributing

@@ -269,106 +269,103 @@
             <!-- ═══════════════ ROW 3 RIGHT: MCP SERVER MANAGER ═══════════════ -->
 
             <rect x="610" y="510" width="1010" height="550" rx="10" fill="var(--bg)" stroke="var(--green)" stroke-width="2"/>
-            <text x="640" y="540" fill="var(--green)" font-size="16" font-weight="800">MCP Server Manager</text>
-            <text x="920" y="540" fill="var(--text-dim)" font-size="11">Capabilities tab &gt; MCP Servers &mdash; extend Claude's tools via the Model Context Protocol</text>
+            <text x="640" y="540" fill="var(--green)" font-size="16" font-weight="800">MCP Tool Server</text>
+            <text x="890" y="540" fill="var(--text-dim)" font-size="11">One integrated server (claude-doc-tools) &mdash; auto-started, add custom tools via the dashboard</text>
 
-            <!-- mcp-servers/ storage -->
+            <!-- Integrated server storage -->
             <rect x="640" y="560" width="240" height="130" rx="7" fill="var(--bg-hover)" stroke="var(--green)" stroke-width="1.2" stroke-dasharray="5,3"/>
-            <text x="760" y="586" text-anchor="middle" fill="var(--green)" font-size="13" font-weight="600">mcp-servers/</text>
+            <text x="760" y="586" text-anchor="middle" fill="var(--green)" font-size="13" font-weight="600">mcp-servers/integrated/</text>
             <line x1="655" y1="596" x2="865" y2="596" stroke="var(--border)" stroke-width="0.5"/>
-            <text x="760" y="616" text-anchor="middle" fill="var(--text-dim)" font-size="11">&lt;slug&gt;/meta.json</text>
-            <text x="760" y="636" text-anchor="middle" fill="var(--text-dim)" font-size="11">&lt;slug&gt;/server.js</text>
-            <text x="760" y="656" text-anchor="middle" fill="var(--text-dim)" font-size="11">&lt;slug&gt;/package.json</text>
-            <text x="760" y="676" text-anchor="middle" fill="var(--text-dim)" font-size="10">&lt;slug&gt;/node_modules/ (isolated)</text>
+            <text x="760" y="616" text-anchor="middle" fill="var(--text-dim)" font-size="11">server.js (auto-generated)</text>
+            <text x="760" y="636" text-anchor="middle" fill="var(--text-dim)" font-size="11">meta.json (tools + settings)</text>
+            <text x="760" y="656" text-anchor="middle" fill="var(--text-dim)" font-size="11">tools/*.js (one file per tool)</text>
+            <text x="760" y="676" text-anchor="middle" fill="var(--text-dim)" font-size="10">package.json + node_modules/</text>
 
-            <!-- Worker Host -->
+            <!-- Tool Manager -->
             <rect x="920" y="560" width="260" height="130" rx="7" fill="var(--bg-hover)" stroke="var(--cyan)" stroke-width="2"/>
-            <text x="1050" y="586" text-anchor="middle" fill="var(--cyan)" font-size="14" font-weight="700">Worker Host</text>
+            <text x="1050" y="586" text-anchor="middle" fill="var(--cyan)" font-size="14" font-weight="700">Tool Manager</text>
             <line x1="940" y1="596" x2="1160" y2="596" stroke="var(--border)" stroke-width="0.5"/>
-            <text x="1050" y="616" text-anchor="middle" fill="var(--text-dim)" font-size="11">Fork &amp; manage child processes</text>
-            <text x="1050" y="636" text-anchor="middle" fill="var(--text-dim)" font-size="11">Hot-reload on file save (fs.watch)</text>
-            <text x="1050" y="656" text-anchor="middle" fill="var(--text-dim)" font-size="11">Approval gate for gated tools</text>
-            <text x="1050" y="676" text-anchor="middle" fill="var(--text-dim)" font-size="11">Start / stop / restart lifecycle</text>
+            <text x="1050" y="616" text-anchor="middle" fill="var(--text-dim)" font-size="11">Form-driven tool editor</text>
+            <text x="1050" y="636" text-anchor="middle" fill="var(--text-dim)" font-size="11">Name, description, typed params</text>
+            <text x="1050" y="656" text-anchor="middle" fill="var(--text-dim)" font-size="11">Handler code editor</text>
+            <text x="1050" y="676" text-anchor="middle" fill="var(--text-dim)" font-size="11">Enable/disable per tool</text>
 
-            <!-- Arrow: storage -> worker host -->
+            <!-- Arrow: storage -> tool manager -->
             <line x1="880" y1="625" x2="918" y2="625" stroke="var(--text-dim)" stroke-width="1.2" marker-end="url(#arrowhead)"/>
-            <text x="900" y="617" text-anchor="middle" fill="var(--text-dim)" font-size="9">loads</text>
+            <text x="900" y="617" text-anchor="middle" fill="var(--text-dim)" font-size="9">reads</text>
 
-            <!-- Worker processes -->
+            <!-- Auto-generated server.js -->
             <rect x="1220" y="560" width="260" height="130" rx="7" fill="var(--bg-hover)" stroke="var(--purple)" stroke-width="1.5"/>
-            <text x="1350" y="586" text-anchor="middle" fill="var(--purple)" font-size="14" font-weight="700">Worker Processes</text>
+            <text x="1350" y="586" text-anchor="middle" fill="var(--purple)" font-size="14" font-weight="700">Auto-generated server.js</text>
             <line x1="1240" y1="596" x2="1460" y2="596" stroke="var(--border)" stroke-width="0.5"/>
-            <text x="1350" y="616" text-anchor="middle" fill="var(--text-dim)" font-size="11">child_process.fork()</text>
-            <text x="1350" y="636" text-anchor="middle" fill="var(--text-dim)" font-size="11">Runs user's server.js</text>
-            <text x="1350" y="656" text-anchor="middle" fill="var(--text-dim)" font-size="11">MCP SDK + Zod (bundled)</text>
-            <text x="1350" y="676" text-anchor="middle" fill="var(--text-dim)" font-size="11">Tool handlers via server.tool()</text>
+            <text x="1350" y="616" text-anchor="middle" fill="var(--text-dim)" font-size="11">Imports enabled tools</text>
+            <text x="1350" y="636" text-anchor="middle" fill="var(--text-dim)" font-size="11">Registers with McpServer</text>
+            <text x="1350" y="656" text-anchor="middle" fill="var(--text-dim)" font-size="11">Rebuilt on tool add/remove/toggle</text>
+            <text x="1350" y="676" text-anchor="middle" fill="var(--text-dim)" font-size="11">MCP SDK + Zod</text>
 
-            <!-- Arrow: worker host -> workers (IPC) -->
-            <line x1="1180" y1="625" x2="1218" y2="625" stroke="var(--cyan)" stroke-width="1.5" marker-end="url(#arrow-cyan)"/>
-            <rect x="1183" y="607" width="30" height="18" rx="3" fill="var(--bg-surface)" stroke="var(--cyan)" stroke-width="0.5"/>
-            <text x="1198" y="620" text-anchor="middle" fill="var(--cyan)" font-size="9" font-weight="700">IPC</text>
+            <!-- Arrow: tool manager -> server.js -->
+            <line x1="1180" y1="625" x2="1218" y2="625" stroke="var(--cyan)" stroke-width="1.5" marker-end="url(#arrow-accent)"/>
+            <rect x="1183" y="607" width="50" height="18" rx="3" fill="var(--bg-surface)" stroke="var(--cyan)" stroke-width="0.5"/>
+            <text x="1208" y="620" text-anchor="middle" fill="var(--cyan)" font-size="9" font-weight="700">generates</text>
 
             <!-- MCP Bridge -->
             <rect x="640" y="720" width="320" height="120" rx="7" fill="var(--bg-hover)" stroke="var(--accent)" stroke-width="2"/>
             <text x="800" y="748" text-anchor="middle" fill="var(--accent)" font-size="14" font-weight="700">MCP Bridge</text>
             <line x1="660" y1="758" x2="940" y2="758" stroke="var(--border)" stroke-width="0.5"/>
             <text x="800" y="778" text-anchor="middle" fill="var(--text-dim)" font-size="11">lib/mcp-bridge.js (standalone script)</text>
-            <text x="800" y="798" text-anchor="middle" fill="var(--text-dim)" font-size="11">Claude Code spawns this via --mcp-config</text>
-            <text x="800" y="818" text-anchor="middle" fill="var(--text-dim)" font-size="11">Relays stdin/stdout JSON-RPC to dashboard WS</text>
+            <text x="800" y="798" text-anchor="middle" fill="var(--text-dim)" font-size="11">Claude Code spawns via --mcp-config</text>
+            <text x="800" y="818" text-anchor="middle" fill="var(--text-dim)" font-size="11">Reports tool calls back to inspector via WS</text>
 
-            <!-- Arrow: bridge -> worker host (WS relay) -->
-            <line x1="920" y1="770" x2="1050" y2="692" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#arrow-accent)"/>
-            <rect x="960" y="720" width="70" height="18" rx="3" fill="var(--bg-surface)" stroke="var(--accent)" stroke-width="0.5"/>
-            <text x="995" y="733" text-anchor="middle" fill="var(--accent)" font-size="9" font-weight="700">WS relay</text>
+            <!-- Arrow: bridge -> server.js -->
+            <line x1="920" y1="770" x2="1350" y2="692" stroke="var(--accent)" stroke-width="1.5" marker-end="url(#arrow-accent)"/>
+            <rect x="1070" y="720" width="80" height="18" rx="3" fill="var(--bg-surface)" stroke="var(--accent)" stroke-width="0.5"/>
+            <text x="1110" y="733" text-anchor="middle" fill="var(--accent)" font-size="9" font-weight="700">imports</text>
 
             <!-- Registrar -->
             <rect x="1000" y="720" width="260" height="120" rx="7" fill="var(--bg-hover)" stroke="var(--red)" stroke-width="1.2"/>
             <text x="1130" y="748" text-anchor="middle" fill="var(--red)" font-size="13" font-weight="600">Registrar</text>
             <line x1="1020" y1="758" x2="1240" y2="758" stroke="var(--border)" stroke-width="0.5"/>
-            <text x="1130" y="778" text-anchor="middle" fill="var(--text-dim)" font-size="11">Reads/writes Claude Code config</text>
-            <text x="1130" y="798" text-anchor="middle" fill="var(--text-dim)" font-size="11">~/.claude.json (user scope)</text>
-            <text x="1130" y="818" text-anchor="middle" fill="var(--text-dim)" font-size="11">.mcp.json (project scope)</text>
+            <text x="1130" y="778" text-anchor="middle" fill="var(--text-dim)" font-size="11">Registers at dashboard startup</text>
+            <text x="1130" y="798" text-anchor="middle" fill="var(--text-dim)" font-size="11">~/.claude.json or .mcp.json</text>
+            <text x="1130" y="818" text-anchor="middle" fill="var(--text-dim)" font-size="11">Unregisters on shutdown</text>
 
-            <!-- Logs -->
+            <!-- Inspector logging -->
             <rect x="1300" y="720" width="200" height="120" rx="7" fill="var(--bg-hover)" stroke="var(--text-dim)" stroke-width="1.2"/>
-            <text x="1400" y="748" text-anchor="middle" fill="var(--text-dim)" font-size="13" font-weight="600">Logs</text>
+            <text x="1400" y="748" text-anchor="middle" fill="var(--text-dim)" font-size="13" font-weight="600">Inspector Logging</text>
             <line x1="1320" y1="758" x2="1480" y2="758" stroke="var(--border)" stroke-width="0.5"/>
-            <text x="1400" y="778" text-anchor="middle" fill="var(--text-dim)" font-size="11">JSONL daily files</text>
-            <text x="1400" y="798" text-anchor="middle" fill="var(--text-dim)" font-size="11">Tool call history + latency</text>
-            <text x="1400" y="818" text-anchor="middle" fill="var(--text-dim)" font-size="11">Filter, search, stats</text>
+            <text x="1400" y="778" text-anchor="middle" fill="var(--text-dim)" font-size="11">Tool calls in Inspector tab</text>
+            <text x="1400" y="798" text-anchor="middle" fill="var(--text-dim)" font-size="11">Input/output JSON detail</text>
+            <text x="1400" y="818" text-anchor="middle" fill="var(--text-dim)" font-size="11">Test + Claude Code sources</text>
 
-            <!-- Templates -->
+            <!-- Tool templates -->
             <rect x="640" y="866" width="320" height="80" rx="6" fill="var(--bg-hover)" stroke="var(--border)" stroke-width="1"/>
-            <text x="800" y="892" text-anchor="middle" fill="var(--text)" font-size="12" font-weight="600">Starter Templates</text>
+            <text x="800" y="892" text-anchor="middle" fill="var(--text)" font-size="12" font-weight="600">Tool Templates</text>
             <line x1="660" y1="900" x2="940" y2="900" stroke="var(--border)" stroke-width="0.5"/>
-            <text x="715" y="920" text-anchor="middle" fill="var(--text-dim)" font-size="10">Blank</text>
-            <text x="782" y="920" text-anchor="middle" fill="var(--text-dim)" font-size="10">REST API</text>
-            <text x="855" y="920" text-anchor="middle" fill="var(--text-dim)" font-size="10">JSON Store</text>
-            <text x="933" y="920" text-anchor="middle" fill="var(--text-dim)" font-size="10">File Tools</text>
+            <text x="800" y="920" text-anchor="middle" fill="var(--text-dim)" font-size="10">Pre-populated handler + params for common patterns</text>
 
-            <!-- Testing console -->
+            <!-- Inline testing -->
             <rect x="1000" y="866" width="260" height="80" rx="6" fill="var(--bg-hover)" stroke="var(--border)" stroke-width="1"/>
-            <text x="1130" y="892" text-anchor="middle" fill="var(--text)" font-size="12" font-weight="600">Testing Console</text>
+            <text x="1130" y="892" text-anchor="middle" fill="var(--text)" font-size="12" font-weight="600">Inline Testing</text>
             <line x1="1020" y1="900" x2="1240" y2="900" stroke="var(--border)" stroke-width="0.5"/>
-            <text x="1130" y="920" text-anchor="middle" fill="var(--text-dim)" font-size="10">Execute tools directly, dynamic param</text>
-            <text x="1130" y="936" text-anchor="middle" fill="var(--text-dim)" font-size="10">forms from Zod schema, latency timing</text>
+            <text x="1130" y="920" text-anchor="middle" fill="var(--text-dim)" font-size="10">Test tools directly from the edit modal</text>
+            <text x="1130" y="936" text-anchor="middle" fill="var(--text-dim)" font-size="10">Param inputs from schema, latency timing</text>
 
-            <!-- Deps tab -->
+            <!-- Deps -->
             <rect x="1300" y="866" width="200" height="80" rx="6" fill="var(--bg-hover)" stroke="var(--border)" stroke-width="1"/>
             <text x="1400" y="892" text-anchor="middle" fill="var(--text)" font-size="12" font-weight="600">Dependencies</text>
             <line x1="1320" y1="900" x2="1480" y2="900" stroke="var(--border)" stroke-width="0.5"/>
-            <text x="1400" y="920" text-anchor="middle" fill="var(--text-dim)" font-size="10">npm install per-server</text>
-            <text x="1400" y="936" text-anchor="middle" fill="var(--text-dim)" font-size="10">SDK + Zod bundled from host</text>
+            <text x="1400" y="920" text-anchor="middle" fill="var(--text-dim)" font-size="10">Shared npm packages</text>
+            <text x="1400" y="936" text-anchor="middle" fill="var(--text-dim)" font-size="10">MCP SDK + Zod included</text>
 
             <!-- ═══════════ FEATURE HIGHLIGHT: MCP ═══════════ -->
             <rect x="1520" y="560" width="90" height="130" rx="6" fill="var(--green)" opacity="0.12"/>
             <text x="1565" y="582" text-anchor="middle" fill="var(--green)" font-size="11" font-weight="700">Custom</text>
-            <text x="1565" y="598" text-anchor="middle" fill="var(--green)" font-size="11" font-weight="700">Tool</text>
-            <text x="1565" y="614" text-anchor="middle" fill="var(--green)" font-size="11" font-weight="700">Servers</text>
-            <text x="1565" y="640" text-anchor="middle" fill="var(--green)" font-size="9">Create from</text>
-            <text x="1565" y="654" text-anchor="middle" fill="var(--green)" font-size="9">templates,</text>
-            <text x="1565" y="668" text-anchor="middle" fill="var(--green)" font-size="9">edit in browser,</text>
-            <text x="1565" y="682" text-anchor="middle" fill="var(--green)" font-size="9">test &amp; deploy</text>
+            <text x="1565" y="598" text-anchor="middle" fill="var(--green)" font-size="11" font-weight="700">MCP</text>
+            <text x="1565" y="614" text-anchor="middle" fill="var(--green)" font-size="11" font-weight="700">Tools</text>
+            <text x="1565" y="640" text-anchor="middle" fill="var(--green)" font-size="9">Add tools via</text>
+            <text x="1565" y="654" text-anchor="middle" fill="var(--green)" font-size="9">form editor,</text>
+            <text x="1565" y="668" text-anchor="middle" fill="var(--green)" font-size="9">test inline,</text>
+            <text x="1565" y="682" text-anchor="middle" fill="var(--green)" font-size="9">auto-register</text>
 
             <!-- ═══════════════ DATA FLOW: claude -p ← Bridge (stdio) ═══════════════ -->
 
@@ -671,7 +668,7 @@
         <button class="ref-nav-btn" data-section="skills">Skills</button>
         <button class="ref-nav-btn" data-section="agents">Agents</button>
         <button class="ref-nav-btn" data-section="hooks">Hooks</button>
-        <button class="ref-nav-btn" data-section="mcp">MCP Servers</button>
+        <button class="ref-nav-btn" data-section="mcp">MCP Tools</button>
       </div>
 
       <!-- ===================== TOOLS ===================== -->
@@ -1557,11 +1554,8 @@
               </div>
 
               <div class="pm-form-group">
-                <h4>MCP Servers</h4>
-                <p class="cap-modal-hint">Select which MCP servers to enable for this profile. Selected servers are passed via <code>--mcp-config</code> to the CLI. Servers must be running for Claude to use them.</p>
-                <div class="pm-tool-grid" id="pmMcpGrid">
-                  <span class="cap-modal-hint">No MCP servers created yet.</span>
-                </div>
+                <h4>MCP Tools</h4>
+                <p class="cap-modal-hint">The integrated MCP tool server (claude-doc-tools) is automatically available to all profiles. Manage tools in the MCP Tools section of the Capabilities tab.</p>
               </div>
 
               <div class="pm-form-group">
@@ -1586,7 +1580,7 @@ max turns        --max-turns &lt;n&gt;
 budget           --max-budget-usd &lt;n&gt;
 append prompt    --append-system-prompt
 system prompt    --system-prompt
-mcp servers      --mcp-config &lt;file&gt;</pre>
+mcp tools        (auto-registered)
 
               <h4>Permission modes</h4>
               <pre class="cap-modal-pre">default        Ask for each tool use
@@ -1620,9 +1614,8 @@ minimal  plan mode, only Read/Glob/
               <h4>Tool restrictions</h4>
               <p class="cap-modal-hint">Disabled tools are passed via <code>--disallowedTools</code>. Claude will not see these tools and cannot invoke them. Useful for restricting destructive operations (Write, Edit, Bash) in review-only profiles.</p>
 
-              <h4>MCP Servers</h4>
-              <p class="cap-modal-hint">Selected MCP servers are written to a temporary config file and passed via <code>--mcp-config</code>. Each server entry includes the bridge command and environment variables from its setup.</p>
-              <p class="cap-modal-hint">Only running servers are usable by Claude. The dashboard must be running to relay MCP tool calls between Claude Code and your server processes.</p>
+              <h4>MCP Tools</h4>
+              <p class="cap-modal-hint">The integrated MCP tool server auto-starts with the dashboard and registers with Claude Code. All enabled tools are available across all profiles. Manage tools in the MCP Tools panel of the Capabilities tab.</p>
 
               <h4>Effort levels</h4>
               <pre class="cap-modal-pre">low     Minimal reasoning, fast
