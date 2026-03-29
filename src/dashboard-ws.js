@@ -40,6 +40,8 @@ class DashboardBroadcaster {
         ws.send(JSON.stringify({ type: 'skill:list', skills: caps.listSkills(cwd) }));
         ws.send(JSON.stringify({ type: 'agent:list', agents: caps.listAgents(cwd) }));
         ws.send(JSON.stringify({ type: 'hook:list', hooks: caps.listHooks(cwd) }));
+        ws.send(JSON.stringify({ type: 'model:list', models: caps.listModels(cwd) }));
+        ws.send(JSON.stringify({ type: 'provider:list', providers: caps.listProviders(cwd) }));
       }
 
       // Send session list and active session
@@ -181,6 +183,48 @@ class DashboardBroadcaster {
             const cwd = this.claudeSession?.cwd || process.cwd();
             const ok = caps.deleteHook(cwd, msg.event, msg.entryIndex);
             if (ok) this.broadcast({ type: 'hook:list', hooks: caps.listHooks(cwd) });
+          // --- Models ---
+          } else if (msg.type === 'model:list') {
+            const cwd = this.claudeSession?.cwd || process.cwd();
+            ws.send(JSON.stringify({ type: 'model:list', models: caps.listModels(cwd) }));
+          } else if (msg.type === 'model:save') {
+            const cwd = this.claudeSession?.cwd || process.cwd();
+            const ok = caps.saveModel(cwd, msg.model);
+            if (ok) {
+              this.broadcast({ type: 'model:list', models: caps.listModels(cwd) });
+            } else {
+              ws.send(JSON.stringify({ type: 'chat:error', text: `Cannot save model: ${msg.model?.name} (invalid)` }));
+            }
+          } else if (msg.type === 'model:delete') {
+            const cwd = this.claudeSession?.cwd || process.cwd();
+            const ok = caps.deleteModel(cwd, msg.name);
+            if (ok) {
+              this.broadcast({ type: 'model:list', models: caps.listModels(cwd) });
+            } else {
+              ws.send(JSON.stringify({ type: 'chat:error', text: `Cannot delete model: ${msg.name}` }));
+            }
+          // --- Providers ---
+          } else if (msg.type === 'provider:list') {
+            const cwd = this.claudeSession?.cwd || process.cwd();
+            ws.send(JSON.stringify({ type: 'provider:list', providers: caps.listProviders(cwd) }));
+          } else if (msg.type === 'provider:save') {
+            const cwd = this.claudeSession?.cwd || process.cwd();
+            const ok = caps.saveProvider(cwd, msg.key, msg.provider);
+            if (ok) {
+              this.broadcast({ type: 'provider:list', providers: caps.listProviders(cwd) });
+              // Resolved models include provider apiKey, so refresh models too
+              this.broadcast({ type: 'model:list', models: caps.listModels(cwd) });
+            } else {
+              ws.send(JSON.stringify({ type: 'chat:error', text: `Cannot save provider: ${msg.key}` }));
+            }
+          } else if (msg.type === 'provider:delete') {
+            const cwd = this.claudeSession?.cwd || process.cwd();
+            const ok = caps.deleteProvider(cwd, msg.key);
+            if (ok) {
+              this.broadcast({ type: 'provider:list', providers: caps.listProviders(cwd) });
+            } else {
+              ws.send(JSON.stringify({ type: 'chat:error', text: `Cannot delete provider: ${msg.key} (in use or not found)` }));
+            }
           // --- MCP Tools ---
           } else if (msg.type === 'mcp:bridge:call') {
             // Bridge reporting a tool call for inspector logging

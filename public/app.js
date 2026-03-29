@@ -1808,11 +1808,12 @@ function openProfileModal(profile, mode) {
   const title = document.getElementById('profileModalTitle');
   if (mode === 'new') title.textContent = 'New Profile';
   else if (mode === 'duplicate') title.textContent = 'Duplicate Profile';
+  else if (mode === 'view') title.textContent = `Profile: ${profile.label || profile.name}`;
   else title.textContent = `Edit Profile: ${profile.name}`;
 
   const nameInput = document.getElementById('pmName');
   nameInput.value = mode === 'duplicate' ? '' : (profile.name || '');
-  nameInput.readOnly = mode === 'edit';
+  nameInput.readOnly = mode === 'edit' || mode === 'view';
 
   document.getElementById('pmLabel').value = (mode === 'duplicate' ? '' : profile.label) || '';
   document.getElementById('pmDescription').value = (mode === 'duplicate' ? '' : profile.description) || '';
@@ -1864,7 +1865,33 @@ function openProfileModal(profile, mode) {
     }
   }
 
-  document.getElementById('profileModal')?.classList.remove('hidden');
+  // View mode: disable all controls, show read-only notice
+  const modal = document.getElementById('profileModal');
+  const isView = mode === 'view';
+  modal.classList.toggle('pm-view-mode', isView);
+  for (const el of modal.querySelectorAll('input, select, textarea')) {
+    if (isView) el.setAttribute('disabled', '');
+    else el.removeAttribute('disabled');
+  }
+  const saveBtn = document.getElementById('pmSave');
+  if (isView) saveBtn.setAttribute('disabled', '');
+  else saveBtn.removeAttribute('disabled');
+
+  let banner = document.getElementById('pmViewBanner');
+  if (isView) {
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.id = 'pmViewBanner';
+      banner.className = 'pm-view-banner';
+      banner.textContent = 'This is a built-in profile and cannot be edited. Use "Duplicate" to create your own copy.';
+      modal.querySelector('.cap-modal-body').prepend(banner);
+    }
+    banner.style.display = '';
+  } else if (banner) {
+    banner.style.display = 'none';
+  }
+
+  modal.classList.remove('hidden');
 }
 
 function closeProfileModal() {
@@ -1881,13 +1908,10 @@ document.getElementById('capNewProfile')?.addEventListener('click', () => {
   }, 'new');
 });
 
-// Edit profile
+// Edit profile (view-only for built-ins)
 document.getElementById('capEditProfile')?.addEventListener('click', () => {
   if (!state.capabilities) return;
-  if (state.capabilities.builtin) {
-    return alert('Built-in profiles cannot be edited. Use "Duplicate" to create an editable copy.');
-  }
-  openProfileModal(state.capabilities, 'edit');
+  openProfileModal(state.capabilities, state.capabilities.builtin ? 'view' : 'edit');
 });
 
 // Duplicate profile

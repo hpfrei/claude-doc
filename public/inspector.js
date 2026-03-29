@@ -1,0 +1,951 @@
+(function() {
+  'use strict';
+  const { state, escHtml, highlightJSON, renderJSON, jsonBlock, formatDuration, truncate,
+          timelineList, detailContent, emptyState, statsEl } = window.dashboard;
+
+  // --- Tool call extraction ---
+  function extractToolCalls(interaction) {
+    const calls = [];
+    const resp = interaction.response || {};
+
+    if (interaction.isStreaming && resp.sseEvents?.length) {
+      let current = null;
+      for (const event of resp.sseEvents) {
+        if (event.eventType === 'content_block_start' && event.data?.content_block?.type === 'tool_use') {
+          const cb = event.data.content_block;
+          current = {
+            blockIndex: event.data.index,
+            id: cb.id || '',
+            name: cb.name || '',
+            inputJson: '',
+            input: null,
+            status: 'streaming',
+          };
+          calls.push(current);
+        } else if (event.eventType === 'content_block_delta' && event.data?.delta?.type === 'input_json_delta') {
+          const match = calls.find(c => c.blockIndex === event.data.index);
+          if (match) match.inputJson += event.data.delta.partial_json || '';
+        } else if (event.eventType === 'content_block_stop') {
+          const match = calls.find(c => c.blockIndex === event.data?.index);
+          if (match) {
+            match.status = 'complete';
+            try { match.input = JSON.parse(match.inputJson); } catch {}
+          }
+        }
+      }
+      return calls;
+    }
+
+    if (resp.body?.content) {
+      for (const block of resp.body.content) {
+        if (block.type === 'tool_use') {
+          calls.push({
+            blockIndex: null,
+            id: block.id || '',
+            name: block.name || '',
+            inputJson: JSON.stringify(block.input || {}),
+            input: block.input || {},
+            status: 'complete',
+          });
+        }
+      }
+    }
+
+    return calls;
+  }
+
+  function findToolResult(toolUseId) {
+    for (const interaction of state.interactions) {
+      const msgs = interaction.request?.messages;
+      if (!msgs) continue;
+      for (const msg of msgs) {
+        if (msg.role !== 'user') continue;
+        const content = Array.isArray(msg.content) ? msg.content : [];
+        for (const block of content) {
+          if (block.type === 'tool_result' && block.tool_use_id === toolUseId) {
+            return block;
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  function isNewUserTurn(interaction) {
+    if ((interaction.endpoint || '/v1/messages') !== '/v1/messages') return false;
+    const msgs = interaction.request?.messages;
+    if (!msgs || msgs.length === 0) return false;
+    const last = msgs[msgs.length - 1];
+    if (last.role !== 'user') return false;
+    const content = Array.isArray(last.content) ? last.content : [];
+    if (content.length === 0) return typeof last.content === 'string';
+    return content[content.length - 1]?.type === 'text';
+  }
+
+  function toolSummary(name, input) {
+    if (!input) return '';
+    if (name === 'Skill') {
+      return truncate(input.args || '', 45);
+    }
+    if (input.file_path) return truncate(input.file_path, 35);
+    if (input.command) return truncate(input.command, 35);
+    if (input.pattern) return truncate(input.pattern, 35);
+    if (input.query) return truncate(input.query, 35);
+    if (input.url) return truncate(input.url, 35);
+    if (input.content) return truncate(typeof input.content === 'string' ? input.content : '', 35);
+    for (const v of Object.values(input)) {
+      if (typeof v === 'string' && v.length > 0) return truncate(v, 35);
+    }
+    return '';
+  }
+
+  // --- SSE event handling ---
+  function handleSSEEvent(interactionId, event) {
+    const interaction = state.interactions.find(i => i.id === interactionId);
+    if (!interaction) return;
+
+    if (!interaction.response) interaction.response = { sseEvents: [] };
+    if (!interaction.response.sseEvents) interaction.response.sseEvents = [];
+    interaction.response.sseEvents.push(event);
+
+    if (event.eventType === 'message_start' && event.data?.message?.usage) {
+      interaction.usage = { ...event.data.message.usage };
+    }
+    if (event.eventType === 'message_delta' && event.data?.usage) {
+      interaction.usage = { ...interaction.usage, ...event.data.usage };
+    }
+    if (event.eventType === 'message_start') {
+      interaction.status = 'streaming';
+      updateTurnBadge(interactionId, 'streaming');
+    }
+    if (event.eventType === 'message_stop') {
+      interaction.status = 'complete';
+      updateTurnBadge(interactionId, 'complete');
+    }
+
+    if (event.eventType === 'content_block_start' && event.data?.content_block?.type === 'tool_use') {
+      const cb = event.data.content_block;
+      const toolCalls = extractToolCalls(interaction);
+      const toolIdx = toolCalls.length - 1;
+      appendToolToTimeline(interactionId, toolIdx, cb.name, '');
+    }
+    if (event.eventType === 'content_block_stop') {
+      const toolCalls = extractToolCalls(interaction);
+      const match = toolCalls.find(c => c.blockIndex === event.data?.index);
+      if (match) {
+        const toolIdx = toolCalls.indexOf(match);
+        const summaryEl = document.querySelector(`[data-tool-summary="${interactionId}-${toolIdx}"]`);
+        if (summaryEl) summaryEl.textContent = toolSummary(match.name, match.input);
+        if (match.name === 'Skill' && match.input?.skill) {
+          const nameEl = document.querySelector(`[data-tool-name="${interactionId}-${toolIdx}"]`);
+          if (nameEl) nameEl.textContent = `/${match.input.skill}`;
+          const toolEl = document.querySelector(`[data-tool-id="${interactionId}-${toolIdx}"]`);
+          if (toolEl && !toolEl.classList.contains('skill-call')) {
+            toolEl.classList.add('skill-call');
+            if (nameEl) {
+              const tag = document.createElement('span');
+              tag.className = 'tool-entry-tag tag-sk';
+              tag.textContent = 'skill';
+              nameEl.after(tag);
+            }
+          }
+        }
+      }
+    }
+
+    const sel = state.selection;
+    if (sel?.type === 'turn' && sel.id === interactionId) {
+      appendSSEToDetail(event, interaction);
+    }
+  }
+
+  function appendSSEToDetail(event, interaction) {
+    const { eventType, data } = event;
+
+    if (eventType === 'message_start') {
+      const statusVal = document.getElementById('resp-status');
+      if (statusVal) { statusVal.textContent = '200'; statusVal.className = 'info-value status-ok'; }
+      if (data?.message?.usage) updateUsageDisplay(data.message.usage);
+    }
+
+    if (eventType === 'content_block_start') {
+      const block = data?.content_block;
+      if (!block) return;
+      const container = document.getElementById('response-blocks');
+      if (!container) return;
+
+      const blockEl = document.createElement('div');
+      blockEl.className = 'content-block';
+      blockEl.id = `block-${data.index}`;
+
+      const header = document.createElement('div');
+      header.className = 'content-block-header';
+
+      const body = document.createElement('div');
+      body.className = 'content-block-body';
+      body.id = `block-body-${data.index}`;
+
+      if (block.type === 'thinking') {
+        header.textContent = 'Thinking';
+        body.classList.add('thinking');
+      } else if (block.type === 'text') {
+        header.textContent = 'Text';
+      } else if (block.type === 'tool_use') {
+        header.textContent = `Tool Use: ${block.name || ''}`;
+        body.classList.add('tool-use');
+        body.innerHTML = `<div class="tool-name">${escHtml(block.name || '')}</div><div class="json-block jt-root" id="tool-input-${data.index}"></div>`;
+      } else {
+        header.textContent = block.type;
+      }
+
+      blockEl.appendChild(header);
+      blockEl.appendChild(body);
+      container.appendChild(blockEl);
+    }
+
+    if (eventType === 'content_block_delta') {
+      const delta = data?.delta;
+      if (!delta) return;
+      const bodyEl = document.getElementById(`block-body-${data.index}`);
+      if (!bodyEl) return;
+
+      if (delta.type === 'thinking_delta' || delta.type === 'text_delta') {
+        bodyEl.appendChild(document.createTextNode(delta.thinking || delta.text || ''));
+        bodyEl.scrollTop = bodyEl.scrollHeight;
+      } else if (delta.type === 'input_json_delta') {
+        const inputEl = document.getElementById(`tool-input-${data.index}`);
+        if (inputEl) inputEl.appendChild(document.createTextNode(delta.partial_json || ''));
+      }
+    }
+
+    if (eventType === 'content_block_stop') {
+      const inputEl = document.getElementById(`tool-input-${data.index}`);
+      if (inputEl) {
+        try {
+          const parsed = JSON.parse(inputEl.textContent);
+          inputEl.innerHTML = renderJSON(parsed);
+        } catch {}
+      }
+    }
+
+    if (eventType === 'message_delta') {
+      if (data?.usage) {
+        interaction.usage = { ...interaction.usage, ...data.usage };
+        updateUsageDisplay(interaction.usage);
+      }
+      if (interaction.timing) {
+        interaction.timing.duration = Date.now() - interaction.timing.startedAt;
+        const durationEl = document.getElementById('resp-duration');
+        if (durationEl) durationEl.textContent = formatDuration(interaction.timing.duration);
+      }
+    }
+
+    if (eventType === 'message_stop') {
+      if (interaction.timing) {
+        const durationEl = document.getElementById('resp-duration');
+        if (durationEl) durationEl.textContent = formatDuration(interaction.timing.duration);
+      }
+      updateTurnBadge(interaction.id, 'complete');
+      updateStats();
+    }
+  }
+
+  // --- Interaction update ---
+  function updateInteraction(updated) {
+    const idx = state.interactions.findIndex(i => i.id === updated.id);
+    if (idx >= 0) {
+      const localEvents = state.interactions[idx].response?.sseEvents || [];
+      state.interactions[idx] = { ...updated, response: { ...updated.response, sseEvents: localEvents } };
+    }
+
+    updateTurnBadge(updated.id, updated.status || 'complete');
+    updateTurnMeta(updated);
+    rebuildToolEntries(updated.id);
+    updateStats();
+
+    const sel = state.selection;
+    if (sel?.type === 'turn' && sel.id === updated.id) {
+      const ttfbEl = document.getElementById('resp-ttfb');
+      const durationEl = document.getElementById('resp-duration');
+      if (ttfbEl && updated.timing?.ttfb) ttfbEl.textContent = formatDuration(updated.timing.ttfb);
+      if (durationEl && updated.timing?.duration) durationEl.textContent = formatDuration(updated.timing.duration);
+      if (updated.usage) updateUsageDisplay(updated.usage);
+    }
+  }
+
+  function markInteractionError(id, error) {
+    const interaction = state.interactions.find(i => i.id === id);
+    if (interaction) {
+      interaction.status = 'error';
+      interaction.response = interaction.response || {};
+      interaction.response.error = error;
+    }
+    updateTurnBadge(id, 'error');
+  }
+
+  // ============================================================
+  // TIMELINE RENDERING
+  // ============================================================
+
+  function renderTimeline() {
+    timelineList.innerHTML = '';
+    state.interactions.forEach((interaction, idx) => {
+      appendTurnToTimeline(interaction, idx);
+    });
+  }
+
+  function appendTurnToTimeline(interaction, idx) {
+    if (idx === undefined) idx = state.interactions.length - 1;
+
+    if (interaction.isMcp) {
+      return appendMcpCallToTimeline(interaction, idx);
+    }
+
+    const group = document.createElement('div');
+    group.className = 'turn-group' + (isNewUserTurn(interaction) ? ' new-user-turn' : '');
+    group.dataset.turnId = interaction.id;
+
+    const el = document.createElement('div');
+    el.className = 'timeline-entry turn-entry';
+    el.dataset.id = interaction.id;
+
+    const statusClass = badgeClass(interaction.status);
+    const model = interaction.request?.model || 'unknown';
+    const shortModel = model.replace('claude-', '').split('-202')[0];
+    const duration = interaction.timing?.duration ? formatDuration(interaction.timing.duration) : '--';
+    const endpoint = interaction.endpoint || '/v1/messages';
+    const shortEndpoint = endpoint.replace('/v1/', '');
+
+    el.innerHTML = `
+      <div class="entry-header">
+        <span class="entry-num">Turn ${idx + 1}</span>
+        <span class="entry-badge ${statusClass}" data-badge="${interaction.id}">${interaction.status || 'pending'}</span>
+      </div>
+      <div class="entry-model" data-model="${interaction.id}">${escHtml(shortModel)}</div>
+      <div class="entry-meta">
+        <span data-endpoint="${interaction.id}">${shortEndpoint}</span>
+        <span data-duration="${interaction.id}">${duration}</span>
+      </div>
+    `;
+
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      select({ type: 'turn', id: interaction.id });
+    });
+
+    group.appendChild(el);
+
+    const toolsContainer = document.createElement('div');
+    toolsContainer.className = 'tool-entries';
+    toolsContainer.dataset.toolsFor = interaction.id;
+    group.appendChild(toolsContainer);
+
+    const toolCalls = extractToolCalls(interaction);
+    toolCalls.forEach((tc, tIdx) => {
+      const toolEl = createToolEntryEl(interaction.id, tIdx, tc.name, toolSummary(tc.name, tc.input), tc.input);
+      toolsContainer.appendChild(toolEl);
+    });
+
+    timelineList.appendChild(group);
+  }
+
+  function appendMcpCallToTimeline(interaction, idx) {
+    const group = document.createElement('div');
+    group.className = 'turn-group mcp-call-group';
+    group.dataset.turnId = interaction.id;
+
+    const el = document.createElement('div');
+    el.className = 'timeline-entry turn-entry mcp-call-entry';
+    el.dataset.id = interaction.id;
+
+    const toolName = interaction.request?.tool || 'unknown';
+    const duration = interaction.timing?.duration ? formatDuration(interaction.timing.duration) : '--';
+    const isError = interaction.status === 'error';
+    const source = interaction.mcpSource === 'claude-code' ? 'claude' : 'test';
+
+    el.innerHTML = `
+      <div class="entry-header">
+        <span class="entry-num mcp-label">MCP</span>
+        <span class="entry-badge ${isError ? 'error' : 'complete'}">${isError ? 'error' : 'ok'}</span>
+      </div>
+      <div class="entry-model mcp-tool-name">${escHtml(toolName)}</div>
+      <div class="entry-meta">
+        <span class="mcp-source-tag mcp-src-${source}">${source}</span>
+        <span>${duration}</span>
+      </div>
+    `;
+
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      select({ type: 'turn', id: interaction.id });
+    });
+
+    group.appendChild(el);
+    timelineList.appendChild(group);
+  }
+
+  function appendToolToTimeline(interactionId, toolIdx, name, summary) {
+    const container = document.querySelector(`[data-tools-for="${interactionId}"]`);
+    if (!container) return;
+    if (container.querySelector(`[data-tool-id="${interactionId}-${toolIdx}"]`)) return;
+    const toolEl = createToolEntryEl(interactionId, toolIdx, name, summary);
+    container.appendChild(toolEl);
+  }
+
+  function createToolEntryEl(interactionId, toolIdx, name, summary, input) {
+    const toolEl = document.createElement('div');
+    const isSkill = name === 'Skill' && input?.skill;
+    toolEl.className = 'timeline-entry tool-entry' + (isSkill ? ' skill-call' : '');
+    toolEl.dataset.toolId = `${interactionId}-${toolIdx}`;
+    const displayName = isSkill ? `/${input.skill}` : name;
+    toolEl.innerHTML = `
+      <span class="tool-connector"></span>
+      <span class="tool-entry-name" data-tool-name="${interactionId}-${toolIdx}">${escHtml(displayName)}</span>
+      ${isSkill ? '<span class="tool-entry-tag tag-sk">skill</span>' : ''}
+      <span class="tool-entry-summary" data-tool-summary="${interactionId}-${toolIdx}">${escHtml(summary)}</span>
+    `;
+    toolEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      select({ type: 'tool', interactionId, toolIndex: toolIdx });
+    });
+    return toolEl;
+  }
+
+  function rebuildToolEntries(interactionId) {
+    const container = document.querySelector(`[data-tools-for="${interactionId}"]`);
+    if (!container) return;
+    container.innerHTML = '';
+    const interaction = state.interactions.find(i => i.id === interactionId);
+    if (!interaction) return;
+    const toolCalls = extractToolCalls(interaction);
+    toolCalls.forEach((tc, tIdx) => {
+      const toolEl = createToolEntryEl(interactionId, tIdx, tc.name, toolSummary(tc.name, tc.input), tc.input);
+      container.appendChild(toolEl);
+    });
+  }
+
+  function updateTurnBadge(id, status) {
+    const badge = document.querySelector(`[data-badge="${id}"]`);
+    if (badge) {
+      badge.className = `entry-badge ${badgeClass(status)}`;
+      badge.textContent = status;
+    }
+  }
+
+  function updateTurnMeta(interaction) {
+    const durationEl = document.querySelector(`[data-duration="${interaction.id}"]`);
+    if (durationEl && interaction.timing?.duration) {
+      durationEl.textContent = formatDuration(interaction.timing.duration);
+    }
+    const modelEl = document.querySelector(`[data-model="${interaction.id}"]`);
+    if (modelEl) {
+      const model = interaction.request?.model || 'unknown';
+      modelEl.textContent = model.replace('claude-', '').split('-202')[0];
+    }
+    const endpointEl = document.querySelector(`[data-endpoint="${interaction.id}"]`);
+    if (endpointEl) {
+      const ep = interaction.endpoint || '/v1/messages';
+      endpointEl.textContent = ep.replace(/^https?:\/\//, '').replace('/v1/', '…/');
+    }
+  }
+
+  function badgeClass(status) {
+    switch (status) {
+      case 'streaming': return 'badge-streaming';
+      case 'complete': return 'badge-complete';
+      case 'error': return 'badge-error';
+      default: return 'badge-pending';
+    }
+  }
+
+  function updateInspectorBusy() {
+    const tab = document.querySelector('[data-view="dashboard"]');
+    if (!tab) return;
+    const busy = state.interactions.some(i => i.status === 'pending' || i.status === 'streaming');
+    tab.classList.toggle('busy', busy);
+  }
+
+  function scrollTimelineToBottom() {
+    const timeline = document.getElementById('timeline');
+    timeline.scrollTop = timeline.scrollHeight;
+  }
+
+  // ============================================================
+  // SELECTION + DETAIL PANEL
+  // ============================================================
+
+  function select(sel) {
+    state.selection = sel;
+
+    document.querySelectorAll('.timeline-entry.selected').forEach(el => el.classList.remove('selected'));
+
+    if (sel.type === 'turn') {
+      const el = document.querySelector(`.turn-entry[data-id="${sel.id}"]`);
+      if (el) el.classList.add('selected');
+
+      const interaction = state.interactions.find(i => i.id === sel.id);
+      if (!interaction) return;
+
+      emptyState.classList.add('hidden');
+      detailContent.classList.remove('hidden');
+      renderTurnDetail(interaction);
+    } else if (sel.type === 'tool') {
+      const el = document.querySelector(`[data-tool-id="${sel.interactionId}-${sel.toolIndex}"]`);
+      if (el) el.classList.add('selected');
+
+      const interaction = state.interactions.find(i => i.id === sel.interactionId);
+      if (!interaction) return;
+
+      emptyState.classList.add('hidden');
+      detailContent.classList.remove('hidden');
+      renderToolDetail(interaction, sel.toolIndex);
+    }
+  }
+
+  function renderMcpCallDetail(interaction) {
+    const req = interaction.request || {};
+    const resp = interaction.response || {};
+    const timing = interaction.timing || {};
+    const isError = interaction.status === 'error';
+    const source = interaction.mcpSource === 'claude-code' ? 'Claude Code' : 'Dashboard test';
+
+    let html = '<div class="section-title" style="color:var(--green)">MCP Tool Call</div>';
+    html += `<div class="info-grid">
+      <span class="info-label">Tool</span><span class="info-value" style="color:var(--green);font-weight:700">${escHtml(req.tool || 'unknown')}</span>
+      <span class="info-label">Source</span><span class="info-value">${source}</span>
+      <span class="info-label">Status</span><span class="info-value" style="color:var(${isError ? '--red' : '--green'})">${isError ? 'Error' : 'Success'}</span>
+      <span class="info-label">Duration</span><span class="info-value">${timing.duration ? formatDuration(timing.duration) : '--'}</span>
+    </div>`;
+
+    html += '<div class="section-title">Input</div>';
+    if (req.params && Object.keys(req.params).length > 0) {
+      html += `${jsonBlock(req.params)}`;
+    } else {
+      html += '<p class="info-label">No parameters</p>';
+    }
+
+    html += '<div class="section-title">Output</div>';
+    if (isError && resp.body?.error) {
+      html += `<div class="content-block"><div class="content-block-header" style="color:var(--red)">Error</div>`;
+      html += `<div class="content-block-body"><pre style="white-space:pre-wrap">${escHtml(resp.body.error)}</pre></div></div>`;
+    } else if (resp.body) {
+      const content = resp.body.content || [];
+      if (Array.isArray(content)) {
+        for (const block of content) {
+          if (block.type === 'text') {
+            html += `<pre class="json-block" style="white-space:pre-wrap">${escHtml(block.text || '')}`;
+          } else {
+            html += `${jsonBlock(block)}`;
+          }
+        }
+      } else {
+        html += `${jsonBlock(resp.body)}`;
+      }
+    } else {
+      html += '<p class="info-label">No output</p>';
+    }
+
+    detailContent.innerHTML = html;
+  }
+
+  function renderTurnDetail(interaction) {
+    if (interaction.isMcp) {
+      return renderMcpCallDetail(interaction);
+    }
+
+    const req = interaction.request || {};
+    const resp = interaction.response || {};
+    const timing = interaction.timing || {};
+
+    const model = req.model || 'unknown';
+    const maxTokens = req.max_tokens || '--';
+    const temperature = req.temperature !== undefined ? req.temperature : '--';
+    const stream = interaction.isStreaming ? 'yes' : 'no';
+
+    let html = '';
+
+    html += `<div class="detail-panel request-panel">`;
+    html += `<div class="section-title">Request</div>`;
+    html += `<div class="info-grid">
+      <span class="info-label">Model</span><span class="info-value">${escHtml(model)}</span>
+      <span class="info-label">Max tokens</span><span class="info-value">${maxTokens}</span>
+      <span class="info-label">Temperature</span><span class="info-value">${temperature}</span>
+      <span class="info-label">Stream</span><span class="info-value">${stream}</span>
+      <span class="info-label">Endpoint</span><span class="info-value">${escHtml(interaction.endpoint || '/v1/messages')}</span>
+      <span class="info-label">Time</span><span class="info-value">${new Date(interaction.timestamp).toLocaleTimeString()}</span>
+    </div>`;
+
+    if (req.system) {
+      const systemText = typeof req.system === 'string' ? req.system : JSON.stringify(req.system, null, 2);
+      const charLen = typeof req.system === 'string' ? req.system.length : JSON.stringify(req.system).length;
+      html += `<details>
+        <summary>System Prompt (${charLen} chars)</summary>
+        <div class="json-block">${escHtml(systemText)}</div>
+      </details>`;
+    }
+
+    if (req.thinking) {
+      html += `<details>
+        <summary>Thinking Config</summary>
+        ${jsonBlock(req.thinking)}</pre>
+      </details>`;
+    }
+
+    if (req.messages?.length > 0) {
+      html += `<details>
+        <summary>Messages (${req.messages.length})</summary>
+        <div class="json-block">${renderMessages(req.messages)}</div>
+      </details>`;
+    }
+
+    if (req.tools?.length > 0) {
+      const toolNames = req.tools.map(t => t.name || 'unnamed').join(', ');
+      html += `<details>
+        <summary>Tools (${req.tools.length}): ${escHtml(truncate(toolNames, 100))}</summary>
+        ${jsonBlock(req.tools)}</pre>
+      </details>`;
+    }
+
+    const knownKeys = new Set(['model', 'system', 'messages', 'tools', 'tool_choice', 'max_tokens', 'temperature', 'stream', 'thinking']);
+    const otherParams = {};
+    for (const [k, v] of Object.entries(req)) {
+      if (!knownKeys.has(k)) otherParams[k] = v;
+    }
+    if (Object.keys(otherParams).length > 0) {
+      html += `<details>
+        <summary>Other Parameters</summary>
+        ${jsonBlock(otherParams)}</pre>
+      </details>`;
+    }
+
+    html += `</div>`;
+
+    html += `<div class="detail-panel response-panel">`;
+    html += `<div class="section-title">Response</div>`;
+
+    const statusOk = resp.status >= 200 && resp.status < 300;
+    html += `<div class="info-grid">
+      <span class="info-label">Status</span><span class="info-value ${statusOk ? 'status-ok' : 'status-err'}" id="resp-status">${resp.status || '--'}</span>
+      <span class="info-label">TTFB</span><span class="info-value" id="resp-ttfb">${timing.ttfb ? formatDuration(timing.ttfb) : '--'}</span>
+      <span class="info-label">Duration</span><span class="info-value" id="resp-duration">${timing.duration ? formatDuration(timing.duration) : '--'}</span>
+    </div>`;
+
+    html += `<div class="usage-bar" id="usage-bar">${interaction.usage ? renderUsage(interaction.usage) : '<span class="info-label">Tokens: --</span>'}</div>`;
+
+    html += `<div id="response-blocks">`;
+
+    if (interaction.isStreaming && resp.sseEvents?.length > 0) {
+      html += renderAccumulatedBlocks(resp.sseEvents);
+    } else if (resp.body) {
+      if (resp.body.content) {
+        for (const block of resp.body.content) html += renderStaticBlock(block);
+      }
+      if (resp.body.type === 'error') {
+        html += `<div class="content-block">
+          <div class="content-block-header" style="color:var(--red)">Error</div>
+          <div class="content-block-body">${escHtml(JSON.stringify(resp.body.error, null, 2))}</div>
+        </div>`;
+      }
+    }
+
+    if (resp.error) {
+      html += `<div class="content-block">
+        <div class="content-block-header" style="color:var(--red)">Proxy Error</div>
+        <div class="content-block-body">${escHtml(resp.error)}</div>
+      </div>`;
+    }
+
+    html += `</div>`;
+
+    if (resp.sseEvents?.length > 0) {
+      html += `<details>
+        <summary>Raw SSE Events (${resp.sseEvents.length})</summary>
+        <pre class="json-block">${resp.sseEvents.map(e =>
+          `<span class="json-key">event:</span> ${escHtml(e.eventType)}\n<span class="json-string">data:</span> ${escHtml(typeof e.data === 'string' ? e.data : JSON.stringify(e.data))}\n`
+        ).join('\n')}</pre>
+      </details>`;
+    }
+
+    html += `</div>`;
+
+    detailContent.innerHTML = html;
+  }
+
+  function renderToolDetail(interaction, toolIndex) {
+    const toolCalls = extractToolCalls(interaction);
+    const tc = toolCalls[toolIndex];
+    if (!tc) { detailContent.innerHTML = '<p>Tool call not found.</p>'; return; }
+
+    let html = '';
+    const isSkill = tc.name === 'Skill' && tc.input?.skill;
+
+    html += `<div class="section-title">${isSkill ? 'Skill Invocation' : 'Tool Call'}</div>`;
+    html += `<div class="info-grid">
+      <span class="info-label">${isSkill ? 'Skill' : 'Tool'}</span><span class="info-value" style="color:var(${isSkill ? '--cyan' : '--purple'});font-weight:700">${isSkill ? '/' + escHtml(tc.input.skill) : escHtml(tc.name)}</span>`;
+    if (isSkill && tc.input.args) {
+      html += `<span class="info-label">Arguments</span><span class="info-value">${escHtml(tc.input.args)}</span>`;
+    }
+    html += `<span class="info-label">Status</span><span class="info-value">${tc.status}</span>
+      <span class="info-label">Turn</span><span class="info-value"><a href="#" class="turn-link" data-turn-id="${interaction.id}">Turn ${state.interactions.indexOf(interaction) + 1}</a></span>
+    </div>`;
+
+    html += `<div class="section-title">Input</div>`;
+    if (tc.input) {
+      html += `${jsonBlock(tc.input)}`;
+    } else if (tc.inputJson) {
+      html += `<pre class="json-block">${escHtml(tc.inputJson)}`;
+    } else {
+      html += `<p class="info-label">No input data</p>`;
+    }
+
+    const result = findToolResult(tc.id);
+    if (result) {
+      html += `<div class="section-title">Result</div>`;
+      if (result.is_error) {
+        html += `<div class="content-block"><div class="content-block-header" style="color:var(--red)">Error Result</div>`;
+      } else {
+        html += `<div class="content-block"><div class="content-block-header">Tool Result</div>`;
+      }
+      html += `<div class="content-block-body">`;
+
+      const content = result.content;
+      if (typeof content === 'string') {
+        html += `<pre style="white-space:pre-wrap">${escHtml(content)}`;
+      } else if (Array.isArray(content)) {
+        for (const block of content) {
+          if (block.type === 'text') {
+            html += `<pre style="white-space:pre-wrap">${escHtml(block.text || '')}`;
+          } else if (block.type === 'image') {
+            html += `<p class="info-label">[image: ${escHtml(block.source?.media_type || 'unknown')}]</p>`;
+          } else {
+            html += `${jsonBlock(block)}`;
+          }
+        }
+      } else if (content) {
+        html += `${jsonBlock(content)}`;
+      }
+
+      html += `</div></div>`;
+    } else {
+      html += `<div class="section-title">Result</div>`;
+      html += `<p class="info-label">No result found (tool may still be executing or result not yet sent)</p>`;
+    }
+
+    detailContent.innerHTML = html;
+
+    const link = detailContent.querySelector('.turn-link');
+    if (link) {
+      link.addEventListener('click', (e) => {
+        e.preventDefault();
+        select({ type: 'turn', id: link.dataset.turnId });
+      });
+    }
+  }
+
+  // ============================================================
+  // RENDERING HELPERS
+  // ============================================================
+
+  function renderAccumulatedBlocks(events) {
+    const blocks = [];
+    let currentBlock = null;
+
+    for (const event of events) {
+      if (event.eventType === 'content_block_start') {
+        const cb = event.data?.content_block;
+        currentBlock = { type: cb?.type || 'unknown', name: cb?.name || '', text: '', index: event.data?.index };
+        blocks.push(currentBlock);
+      } else if (event.eventType === 'content_block_delta' && currentBlock) {
+        const delta = event.data?.delta;
+        if (delta?.type === 'text_delta') currentBlock.text += delta.text || '';
+        else if (delta?.type === 'thinking_delta') currentBlock.text += delta.thinking || '';
+        else if (delta?.type === 'input_json_delta') currentBlock.text += delta.partial_json || '';
+      } else if (event.eventType === 'content_block_stop') {
+        currentBlock = null;
+      }
+    }
+
+    return blocks.map(b => {
+      if (b.type === 'thinking') {
+        return `<div class="content-block">
+          <div class="content-block-header">Thinking</div>
+          <div class="content-block-body thinking">${escHtml(b.text)}</div>
+        </div>`;
+      } else if (b.type === 'text') {
+        return `<div class="content-block">
+          <div class="content-block-header">Text</div>
+          <div class="content-block-body">${escHtml(b.text)}</div>
+        </div>`;
+      } else if (b.type === 'tool_use') {
+        let inputHtml;
+        try { inputHtml = jsonBlock(JSON.parse(b.text)); } catch { inputHtml = `<pre class="json-block">${escHtml(b.text)}</pre>`; }
+        return `<div class="content-block">
+          <div class="content-block-header">Tool Use: ${escHtml(b.name)}</div>
+          <div class="content-block-body tool-use">
+            <div class="tool-name">${escHtml(b.name)}</div>
+            ${inputHtml}
+          </div>
+        </div>`;
+      }
+      return `<div class="content-block">
+        <div class="content-block-header">${escHtml(b.type)}</div>
+        <div class="content-block-body">${escHtml(b.text)}</div>
+      </div>`;
+    }).join('');
+  }
+
+  function renderStaticBlock(block) {
+    if (block.type === 'text') {
+      return `<div class="content-block">
+        <div class="content-block-header">Text</div>
+        <div class="content-block-body">${escHtml(block.text || '')}</div>
+      </div>`;
+    }
+    if (block.type === 'thinking') {
+      return `<div class="content-block">
+        <div class="content-block-header">Thinking</div>
+        <div class="content-block-body thinking">${escHtml(block.thinking || '')}</div>
+      </div>`;
+    }
+    if (block.type === 'tool_use') {
+      return `<div class="content-block">
+        <div class="content-block-header">Tool Use: ${escHtml(block.name || '')}</div>
+        <div class="content-block-body tool-use">
+          <div class="tool-name">${escHtml(block.name || '')}</div>
+          ${jsonBlock(block.input || {})}</pre>
+        </div>
+      </div>`;
+    }
+    return `<div class="content-block">
+      <div class="content-block-header">${escHtml(block.type)}</div>
+      ${jsonBlock(block)}</pre>
+    </div>`;
+  }
+
+  function renderMessages(messages) {
+    return messages.map((msg, idx) => {
+      const role = msg.role || 'unknown';
+      let preview = '';
+      if (typeof msg.content === 'string') {
+        preview = msg.content.slice(0, 150);
+      } else if (Array.isArray(msg.content)) {
+        preview = msg.content.map(b => {
+          if (b.type === 'text') return (b.text || '').slice(0, 80);
+          if (b.type === 'tool_use') return `[tool_use: ${b.name}]`;
+          if (b.type === 'tool_result') return `[tool_result: ${b.tool_use_id}]`;
+          if (b.type === 'image') return '[image]';
+          return `[${b.type}]`;
+        }).join(' | ');
+      }
+      return `<details>
+        <summary><strong>${escHtml(role)}</strong> [${idx}]: ${escHtml(truncate(preview, 120))}</summary>
+        ${jsonBlock(msg)}
+      </details>`;
+    }).join('');
+  }
+
+  function renderUsage(usage) {
+    let html = '';
+    if (usage.input_tokens !== undefined)
+      html += `<div class="usage-item"><span class="usage-dot input"></span>${usage.input_tokens} input</div>`;
+    if (usage.output_tokens !== undefined)
+      html += `<div class="usage-item"><span class="usage-dot output"></span>${usage.output_tokens} output</div>`;
+    if (usage.cache_read_input_tokens)
+      html += `<div class="usage-item"><span class="usage-dot cache-read"></span>${usage.cache_read_input_tokens} cache read</div>`;
+    if (usage.cache_creation_input_tokens)
+      html += `<div class="usage-item"><span class="usage-dot cache-create"></span>${usage.cache_creation_input_tokens} cache create</div>`;
+    return html;
+  }
+
+  function updateUsageDisplay(usage) {
+    const bar = document.getElementById('usage-bar');
+    if (bar) bar.innerHTML = renderUsage(usage);
+  }
+
+  function updateStats() {
+    const total = state.interactions.length;
+    let inputTokens = 0, outputTokens = 0, toolCallCount = 0;
+    for (const i of state.interactions) {
+      if (i.usage) {
+        inputTokens += i.usage.input_tokens || 0;
+        outputTokens += i.usage.output_tokens || 0;
+      }
+      toolCallCount += extractToolCalls(i).length;
+    }
+    statsEl.textContent = `${total} turn${total !== 1 ? 's' : ''} | ${toolCallCount} tool call${toolCallCount !== 1 ? 's' : ''} | ${inputTokens.toLocaleString()} in / ${outputTokens.toLocaleString()} out tokens`;
+  }
+
+  // --- Message handler ---
+  function handleMessage(msg) {
+    switch (msg.type) {
+      case 'init':
+        state.interactions = msg.interactions || [];
+        renderTimeline();
+        updateStats();
+        updateInspectorBusy();
+        if (state.interactions.length > 0) {
+          select({ type: 'turn', id: state.interactions[state.interactions.length - 1].id });
+        }
+        break;
+
+      case 'interaction:start':
+        state.interactions.push(msg.interaction);
+        appendTurnToTimeline(msg.interaction);
+        updateStats();
+        updateInspectorBusy();
+        select({ type: 'turn', id: msg.interaction.id });
+        scrollTimelineToBottom();
+        break;
+
+      case 'interaction:update':
+        updateInteraction(msg.interaction);
+        // Re-render detail if this interaction is selected
+        if (state.selection?.type === 'turn' && state.selection.id === msg.interaction.id) {
+          select({ type: 'turn', id: msg.interaction.id });
+        }
+        break;
+
+      case 'sse_event':
+        handleSSEEvent(msg.interactionId, msg.event);
+        break;
+
+      case 'interaction:complete':
+        updateInteraction(msg.interaction);
+        updateInspectorBusy();
+        break;
+
+      case 'interaction:error':
+        markInteractionError(msg.interactionId, msg.error);
+        updateInspectorBusy();
+        break;
+
+      case 'session:switched':
+        state.interactions = msg.interactions || [];
+        state.selection = null;
+        renderTimeline();
+        updateStats();
+        updateInspectorBusy();
+        if (state.interactions.length > 0) {
+          select({ type: 'turn', id: state.interactions[state.interactions.length - 1].id });
+        } else {
+          detailContent.innerHTML = '';
+          detailContent.classList.add('hidden');
+          emptyState.classList.remove('hidden');
+        }
+        break;
+
+      case 'cleared':
+        state.interactions = [];
+        state.selection = null;
+        timelineList.innerHTML = '';
+        detailContent.innerHTML = '';
+        detailContent.classList.add('hidden');
+        emptyState.classList.remove('hidden');
+        updateStats();
+        updateInspectorBusy();
+        break;
+    }
+  }
+
+  window.inspectorModule = { handleMessage };
+})();

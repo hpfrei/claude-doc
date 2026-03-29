@@ -1,0 +1,423 @@
+// --- Theme toggle ---
+(function initTheme() {
+  const btn = document.getElementById('themeToggle');
+  const link = document.getElementById('themeLink');
+  let theme = localStorage.getItem('theme') || 'bright';
+  btn.textContent = theme;
+
+  btn.addEventListener('click', () => {
+    theme = theme === 'dark' ? 'bright' : 'dark';
+    link.href = `theme-${theme}.css`;
+    localStorage.setItem('theme', theme);
+    btn.textContent = theme;
+  });
+})();
+
+// --- State ---
+const state = {
+  interactions: [],
+  selection: null,
+  ws: null,
+  reconnectDelay: 1000,
+  activeSessionId: null,
+  // Chat
+  chatCurrentEl: null,
+  // Capabilities
+  capabilities: null,
+  profiles: [],
+  activeProfileName: null,
+  knownTools: [],
+  knownSkills: [],
+  agents: [],
+  hooks: [],
+  hookEvents: [],
+  matcherEvents: [],
+  skills: [],
+  editingSkill: null,
+  editingAgent: null,
+  editingHook: null,
+  models: [],
+  providers: [],
+  editingModel: null,
+  mcpServers: [],
+  // Tasks
+  tasks: {},
+  todos: [],
+  pendingTaskTools: {},
+  taskPanelCollapsed: false,
+};
+
+// --- Utilities ---
+function escHtml(str) {
+  if (typeof str !== 'string') str = String(str);
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function highlightJSON(obj) {
+  const json = JSON.stringify(obj, null, 2);
+  if (!json) return '';
+  return escHtml(json)
+    .replace(/"([^"\\]*(?:\\.[^"\\]*)*)"\s*:/g, '<span class="json-key">"$1"</span>:')
+    .replace(/:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/g, ': <span class="json-string">"$1"</span>')
+    .replace(/:\s*(true|false)/g, ': <span class="json-bool">$1</span>')
+    .replace(/:\s*(-?\d+\.?\d*(?:[eE][+-]?\d+)?)/g, ': <span class="json-number">$1</span>')
+    .replace(/:\s*(null)/g, ': <span class="json-null">$1</span>');
+}
+
+// --- Collapsible JSON tree renderer ---
+
+function preview(val, budget) {
+  if (budget <= 0) return '…';
+  if (val === null) return '<span class="json-null">null</span>';
+  if (typeof val === 'boolean') return `<span class="json-bool">${val}</span>`;
+  if (typeof val === 'number') return `<span class="json-number">${val}</span>`;
+  if (typeof val === 'string') {
+    const max = Math.min(budget, 30);
+    const t = val.length > max ? val.slice(0, max) + '…' : val;
+    return `<span class="json-string">"${escHtml(t)}"</span>`;
+  }
+  if (Array.isArray(val)) {
+    if (val.length === 0) return '<span class="jt-bracket">[]</span>';
+    const inner = preview(val[0], budget - 12);
+    const more = val.length > 1 ? '<span class="jt-comma">, </span>…' : '';
+    return `${inner}${more} <span class="jt-count">// ${val.length}</span>`;
+  }
+  if (typeof val === 'object') {
+    const keys = Object.keys(val);
+    if (keys.length === 0) return '<span class="jt-bracket">{}</span>';
+    const parts = [];
+    let len = 0;
+    for (const k of keys) {
+      if (len + k.length + 2 > budget && parts.length > 0) { parts.push('…'); break; }
+      parts.push(escHtml(k));
+      len += k.length + 2;
+    }
+    return parts.join('<span class="jt-comma">, </span>');
+  }
+  return escHtml(String(val));
+}
+
+function renderJSON(obj) {
+  if (obj === undefined) return '';
+  if (obj === null) return '<span class="json-null">null</span>';
+  return renderValue(obj, null);
+}
+
+function renderValue(val, key) {
+  const keyHtml = key !== null
+    ? `<span class="json-key">"${escHtml(key)}"</span>: ` : '';
+  if (val === null) return keyHtml + '<span class="json-null">null</span>';
+  if (typeof val === 'string') {
+    const escaped = escHtml(val).replace(/\n/g, '<br>');
+    return keyHtml + `<span class="json-string">"${escaped}"</span>`;
+  }
+  if (typeof val === 'number') return keyHtml + `<span class="json-number">${val}</span>`;
+  if (typeof val === 'boolean') return keyHtml + `<span class="json-bool">${val}</span>`;
+  if (Array.isArray(val)) {
+    if (val.length === 0) return keyHtml + '<span class="jt-bracket">[]</span>';
+    const children = val.map((v, i) =>
+      `<div class="jt-line">${renderValue(v, null)}${i < val.length - 1 ? '<span class="jt-comma">,</span>' : ''}</div>`
+    ).join('');
+    const pv = preview(val[0], 60);
+    const more = val.length > 1 ? '<span class="jt-comma">, </span>…' : '';
+    const count = ` <span class="jt-count">// ${val.length}</span>`;
+    const summary = `${pv}${more} <span class="jt-bracket">]</span>${count}`;
+    return `${keyHtml}<details class="jt-node"><summary><span class="jt-bracket">[</span><span class="jt-summary">${summary}</span><button class="jt-expand-btn"></button></summary><div class="jt-children">${children}</div><span class="jt-bracket jt-close">]</span></details>`;
+  }
+  if (typeof val === 'object') {
+    const keys = Object.keys(val);
+    if (keys.length === 0) return keyHtml + '<span class="jt-bracket">{}</span>';
+    const children = keys.map((k, i) =>
+      `<div class="jt-line">${renderValue(val[k], k)}${i < keys.length - 1 ? '<span class="jt-comma">,</span>' : ''}</div>`
+    ).join('');
+    const pv = preview(val, 60);
+    const summary = `${pv} <span class="jt-bracket">}</span>`;
+    return `${keyHtml}<details class="jt-node"><summary><span class="jt-bracket">{</span><span class="jt-summary">${summary}</span><button class="jt-expand-btn"></button></summary><div class="jt-children">${children}</div><span class="jt-bracket jt-close">}</span></details>`;
+  }
+  return keyHtml + escHtml(String(val));
+}
+
+function jsonBlock(obj) {
+  const raw = JSON.stringify(obj, null, 2);
+  return `<div class="json-block jt-root"><button class="jt-copy" title="Copy JSON">Copy</button><script type="application/json">${escHtml(raw)}<\/script>${renderJSON(obj)}</div>`;
+}
+
+// Copy button handler (delegated)
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('.jt-copy');
+  if (!btn) return;
+  const script = btn.parentElement.querySelector('script[type="application/json"]');
+  if (!script) return;
+  navigator.clipboard.writeText(script.textContent).then(() => {
+    btn.textContent = 'Copied!';
+    setTimeout(() => btn.textContent = 'Copy', 1200);
+  });
+});
+
+// Expand/collapse all handler (delegated)
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('.jt-expand-btn');
+  if (!btn) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const node = btn.closest('.jt-node');
+  if (!node) return;
+  const descendants = node.querySelectorAll('details.jt-node');
+  const allOpen = node.open && [...descendants].every(d => d.open);
+  const target = !allOpen;
+  node.open = target;
+  descendants.forEach(d => d.open = target);
+});
+
+function formatDuration(ms) {
+  if (ms === null || ms === undefined) return '--';
+  if (ms < 1000) return `${ms}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+function truncate(s, n) {
+  if (!s) return '';
+  return s.length > n ? s.slice(0, n) + '...' : s;
+}
+
+// --- DOM refs ---
+const timelineList = document.getElementById('timeline-list');
+const detailContent = document.getElementById('detail-content');
+const emptyState = document.getElementById('empty-state');
+const statusEl = document.getElementById('status');
+const statsEl = document.getElementById('stats');
+const sessionPicker = document.getElementById('sessionPicker');
+const newSessionBtn = document.getElementById('newSessionBtn');
+const deleteSessionBtn = document.getElementById('deleteSessionBtn');
+const switchSessionBtn = document.getElementById('switchSessionBtn');
+
+// --- Expose API for modules ---
+window.dashboard = {
+  state,
+  sendWs(msg) { if (state.ws) state.ws.send(JSON.stringify(msg)); },
+  escHtml,
+  highlightJSON,
+  renderJSON,
+  jsonBlock,
+  formatDuration,
+  truncate,
+  timelineList,
+  detailContent,
+  emptyState,
+  statsEl,
+};
+
+// --- WebSocket ---
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const ws = new WebSocket(`${proto}//${location.host}`);
+  state.ws = ws;
+
+  ws.onopen = () => {
+    statusEl.textContent = 'connected';
+    statusEl.className = 'status connected';
+    state.reconnectDelay = 1000;
+  };
+
+  ws.onclose = (evt) => {
+    if (evt.code === 1006 && state.reconnectDelay === 1000) {
+      statusEl.textContent = 'unauthorized';
+      statusEl.className = 'status disconnected';
+      window.location.href = '/login';
+      return;
+    }
+    statusEl.textContent = 'disconnected';
+    statusEl.className = 'status disconnected';
+    setTimeout(connect, state.reconnectDelay);
+    state.reconnectDelay = Math.min(state.reconnectDelay * 2, 10000);
+  };
+
+  ws.onmessage = (evt) => {
+    const msg = JSON.parse(evt.data);
+    handleMessage(msg);
+  };
+}
+
+function handleMessage(msg) {
+  switch (msg.type) {
+    // Inspector
+    case 'init':
+    case 'interaction:start':
+    case 'interaction:update':
+    case 'sse_event':
+    case 'interaction:complete':
+    case 'interaction:error':
+    case 'cleared':
+      window.inspectorModule?.handleMessage(msg);
+      if (msg.type === 'sse_event') window.taskModule?.interceptSSE(msg.event);
+      break;
+
+    // Session
+    case 'session:list':
+      updateSessionPicker(msg.sessions, msg.activeId);
+      break;
+    case 'session:switched':
+      window.inspectorModule?.handleMessage(msg);
+      window.taskModule?.handleMessage(msg);
+      window.chatModule?.handleMessage(msg);
+      break;
+
+    // Chat + Ask
+    case 'chat:event':
+    case 'chat:output':
+    case 'chat:error':
+    case 'chat:status':
+    case 'ask:question':
+    case 'ask:answered':
+    case 'ask:timeout':
+      window.chatModule?.handleMessage(msg);
+      break;
+    case 'chat:settings':
+      window.chatModule?.handleMessage(msg);
+      window.capabilitiesModule?.handleSettings(msg);
+      break;
+
+    // Capabilities
+    case 'skill:list':
+    case 'agent:list':
+    case 'hook:list':
+    case 'model:list':
+    case 'provider:list':
+      window.capabilitiesModule?.handleMessage(msg);
+      break;
+    case 'profile:list':
+      window.capabilitiesModule?.handleMessage(msg);
+      window.chatModule?.updateProfiles(msg.profiles);
+      break;
+
+    // MCP
+    default:
+      if (msg.type === 'mcp:list') state.mcpServers = msg.servers || [];
+      if (window.mcpModule?.handleMessage) window.mcpModule.handleMessage(msg);
+      break;
+  }
+}
+
+// --- Session management ---
+newSessionBtn?.addEventListener('click', () => {
+  if (state.ws?.readyState === WebSocket.OPEN) {
+    state.ws.send(JSON.stringify({ type: 'session:new' }));
+  }
+});
+
+sessionPicker?.addEventListener('change', () => {
+  updateSessionActions();
+});
+
+switchSessionBtn?.addEventListener('click', () => {
+  const id = parseInt(sessionPicker.value, 10);
+  if (!id || isNaN(id) || id === state.activeSessionId) return;
+  if (state.ws?.readyState === WebSocket.OPEN) {
+    state.ws.send(JSON.stringify({ type: 'session:switch', id }));
+  }
+});
+
+deleteSessionBtn?.addEventListener('click', () => {
+  const id = parseInt(sessionPicker.value, 10);
+  if (!id || isNaN(id) || id === state.activeSessionId) return;
+  if (state.ws?.readyState === WebSocket.OPEN) {
+    state.ws.send(JSON.stringify({ type: 'session:delete', id }));
+  }
+});
+
+function updateSessionActions() {
+  const id = parseInt(sessionPicker?.value, 10);
+  const isActive = !id || id === state.activeSessionId;
+  switchSessionBtn?.classList.toggle('hidden', isActive);
+  deleteSessionBtn?.classList.toggle('hidden', isActive);
+}
+
+function updateSessionPicker(sessions, activeId) {
+  if (!sessionPicker) return;
+  state.activeSessionId = activeId;
+  sessionPicker.innerHTML = '';
+  for (const s of sessions) {
+    const opt = document.createElement('option');
+    opt.value = s.id;
+    const suffix = s.id === activeId ? ' *' : '';
+    const label = `Session ${s.id} (${s.interactionCount} calls)${suffix}`;
+    opt.textContent = label;
+    if (s.id === activeId) opt.selected = true;
+    sessionPicker.appendChild(opt);
+  }
+  updateSessionActions();
+}
+
+// ============================================================
+// VIEW SWITCHING (Dashboard / Claude / Capabilities)
+// ============================================================
+
+document.getElementById('headerTabs').addEventListener('click', e => {
+  const tab = e.target.closest('.header-tab');
+  if (!tab) return;
+  const view = tab.dataset.view;
+
+  document.querySelectorAll('.header-tab').forEach(t => t.classList.remove('active'));
+  tab.classList.add('active');
+
+  const views = ['view-dashboard', 'view-claude', 'view-capabilities'];
+  for (const id of views) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    if (id === `view-${view}`) {
+      el.style.display = '';
+      el.classList.remove('hidden');
+    } else {
+      el.style.display = 'none';
+      el.classList.add('hidden');
+    }
+  }
+});
+
+// ============================================================
+// REFERENCE PANEL LOGIC
+// ============================================================
+
+// Global — called from inline onclick in HTML
+function toggleRef(header) {
+  header.closest('.ref-card').classList.toggle('open');
+}
+
+document.getElementById('refNav').addEventListener('click', e => {
+  const btn = e.target.closest('.ref-nav-btn');
+  if (!btn) return;
+  const section = btn.dataset.section;
+
+  document.querySelectorAll('.ref-nav-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+
+  document.querySelectorAll('.ref-panel').forEach(p => p.classList.remove('active'));
+  const target = document.getElementById('ref-' + section);
+  if (target) target.classList.add('active');
+});
+
+document.getElementById('refFilter').addEventListener('click', e => {
+  const btn = e.target.closest('.ref-filter-btn');
+  if (!btn) return;
+  const cat = btn.dataset.cat;
+
+  document.querySelectorAll('.ref-filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+
+  document.querySelectorAll('#ref-tools .ref-category').forEach(section => {
+    section.style.display = (cat === 'all' || section.dataset.cat === cat) ? '' : 'none';
+  });
+});
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'e' && e.altKey) {
+    const activePanel = document.querySelector('.ref-panel.active');
+    if (!activePanel) return;
+    const cards = activePanel.querySelectorAll('.ref-card');
+    const allOpen = [...cards].every(c => c.classList.contains('open'));
+    cards.forEach(c => c.classList.toggle('open', !allOpen));
+  }
+});
+
+// --- Init ---
+connect();

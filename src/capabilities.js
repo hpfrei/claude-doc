@@ -211,6 +211,7 @@ function validateProfile(p) {
     appendSystemPrompt: typeof p.appendSystemPrompt === 'string' && p.appendSystemPrompt.trim() ? p.appendSystemPrompt.trim() : null,
     systemPrompt: typeof p.systemPrompt === 'string' && p.systemPrompt.trim() ? p.systemPrompt.trim() : null,
     mcpServers: Array.isArray(p.mcpServers) ? p.mcpServers.filter(s => typeof s === 'string') : [],
+    modelDef: typeof p.modelDef === 'string' && p.modelDef.trim() ? p.modelDef.trim() : null,
   };
 }
 
@@ -447,6 +448,265 @@ function deleteHook(cwd, event, entryIndex) {
   return true;
 }
 
+// --- System prompt constants ---
+
+const BASE_SYSTEM_PROMPT = `You are a coding assistant with direct access to the user's file system through tools. You help with software engineering tasks: writing code, debugging, refactoring, explaining code, and more.
+
+## Available Tools
+
+You have access to file system and development tools:
+- **Read**: Read file contents by path. Always read before modifying a file.
+- **Write**: Create new files or fully rewrite existing ones.
+- **Edit**: Make targeted string replacements in existing files. Prefer this over Write for modifications.
+- **Bash**: Execute shell commands. Use for builds, tests, git, and system operations.
+- **Glob**: Find files by glob pattern (e.g. "**/*.js"). Use instead of find or ls commands.
+- **Grep**: Search file contents with regex. Use instead of grep or rg commands.
+- **WebSearch**: Search the web for current information.
+- **WebFetch**: Fetch content from a specific URL.
+- **Skill**: Execute a named skill (reusable prompt template). When users say "/<name>", call this tool with that skill name.
+- **Agent**: Launch a sub-agent for independent sub-tasks.
+- **TodoWrite**: Track task progress with a todo list.
+
+## Guidelines
+
+- Always read files before modifying them. Understand existing code first.
+- Prefer editing existing files over creating new ones.
+- Use dedicated file tools (Read, Edit, Write, Glob, Grep) instead of shell equivalents.
+- Keep responses concise and direct. Lead with the answer, not the reasoning.
+- Do not add features, refactoring, or improvements beyond what was asked.
+- Be careful about security: avoid injection vulnerabilities, validate inputs at boundaries.
+- When referencing code locations, use the format file_path:line_number.
+- If a task seems risky or destructive, confirm with the user before proceeding.
+- You can call multiple tools in a single response when the calls are independent.`;
+
+const REASONING_ADDENDUM = `
+
+## Thinking
+
+You have extended thinking capabilities. Use them for:
+- Planning multi-step code changes before executing
+- Analyzing complex bugs or architectural questions
+- Reasoning through trade-offs before choosing an approach
+Do not narrate your thinking process in your response — just provide the result.`;
+
+function getDefaultSystemPrompt(reasoning) {
+  return BASE_SYSTEM_PROMPT + (reasoning ? REASONING_ADDENDUM : '');
+}
+
+// --- Model CRUD (capabilities/models.json) ---
+
+function modelsFilePath(baseDir) {
+  return path.join(baseDir, 'capabilities', 'models.json');
+}
+
+// Detect provider key from apiBaseUrl domain (used in migration)
+function detectProviderKey(apiBaseUrl) {
+  if (!apiBaseUrl) return 'custom';
+  const domain = apiBaseUrl.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+  if (domain.includes('openai.com')) return 'openai';
+  if (domain.includes('googleapis.com')) return 'google';
+  if (domain.includes('deepseek.com')) return 'deepseek';
+  if (domain.includes('moonshot.cn')) return 'moonshot';
+  if (domain.includes('localhost')) return 'ollama';
+  return 'custom';
+}
+
+// Migrate old flat array format to { providers, models }
+function migrateFromFlatArray(arr) {
+  const providerMap = {};
+  const models = [];
+
+  for (const m of arr) {
+    const pk = detectProviderKey(m.apiBaseUrl);
+    // Build provider entry from first model we see for this key
+    if (!providerMap[pk]) {
+      let label = pk;
+      if (pk === 'openai') label = 'OpenAI';
+      else if (pk === 'google') label = 'Google';
+      else if (pk === 'deepseek') label = 'DeepSeek';
+      else if (pk === 'moonshot') label = 'Moonshot / Kimi';
+      else if (pk === 'ollama') label = 'Ollama (Local)';
+      else if (pk === 'custom') label = 'Custom';
+      providerMap[pk] = {
+        label,
+        apiBaseUrl: m.apiBaseUrl || '',
+        apiKey: m.apiKey || '',
+      };
+    }
+    // Strip provider-level fields from model
+    const stripped = {
+      name: m.name,
+      label: m.label || m.name,
+      description: m.description || '',
+      providerKey: pk,
+      provider: m.provider || 'openai',
+      modelId: m.modelId || '',
+      systemPromptMode: m.systemPromptMode || 'replace',
+      toolOverrides: m.toolOverrides || {},
+      reasoning: !!m.reasoning,
+      contextWindow: typeof m.contextWindow === 'number' ? m.contextWindow : null,
+      maxOutputTokens: typeof m.maxOutputTokens === 'number' ? m.maxOutputTokens : null,
+    };
+    // Custom models keep their own apiBaseUrl/apiKey if different from provider
+    if (pk === 'custom' && m.apiBaseUrl) {
+      stripped.apiBaseUrl = m.apiBaseUrl;
+      stripped.apiKey = m.apiKey || '';
+    }
+    models.push(stripped);
+  }
+
+  return { providers: providerMap, models };
+}
+
+// Read models.json, auto-migrating from old flat format if needed
+function readModelsFile(baseDir) {
+  const file = modelsFilePath(baseDir);
+  const empty = { providers: {}, models: [] };
+  try {
+    if (!fs.existsSync(file)) return empty;
+    const raw = JSON.parse(fs.readFileSync(file, 'utf-8'));
+
+    if (Array.isArray(raw)) {
+      // Old flat format — migrate
+      const migrated = migrateFromFlatArray(raw);
+      const dir = path.join(baseDir, 'capabilities');
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(file, JSON.stringify(migrated, null, 2));
+      return migrated;
+    }
+
+    // New format
+    return {
+      providers: raw.providers && typeof raw.providers === 'object' ? raw.providers : {},
+      models: Array.isArray(raw.models) ? raw.models : [],
+    };
+  } catch {
+    return empty;
+  }
+}
+
+function writeModelsFile(baseDir, data) {
+  const dir = path.join(baseDir, 'capabilities');
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(modelsFilePath(baseDir), JSON.stringify(data, null, 2));
+}
+
+// Merge provider-level fields onto a model to produce a fully resolved object
+function resolveModel(model, providers) {
+  const prov = providers[model.providerKey] || {};
+  const systemPrompt = model.systemPrompt || getDefaultSystemPrompt(model.reasoning);
+  return {
+    name: model.name,
+    label: model.label || model.name,
+    description: model.description || '',
+    providerKey: model.providerKey || 'custom',
+    provider: model.provider || 'openai',
+    modelId: model.modelId || '',
+    apiBaseUrl: model.apiBaseUrl || prov.apiBaseUrl || '',
+    apiKey: model.apiKey || prov.apiKey || '',
+    systemPromptMode: model.systemPromptMode || 'replace',
+    systemPrompt,
+    toolOverrides: model.toolOverrides || {},
+    reasoning: !!model.reasoning,
+    contextWindow: typeof model.contextWindow === 'number' ? model.contextWindow : null,
+    maxOutputTokens: typeof model.maxOutputTokens === 'number' ? model.maxOutputTokens : null,
+  };
+}
+
+function listModels(baseDir) {
+  const data = readModelsFile(baseDir);
+  return data.models.map(m => resolveModel(m, data.providers));
+}
+
+function loadModel(baseDir, name) {
+  const models = listModels(baseDir);
+  return models.find(m => m.name === name) || null;
+}
+
+function saveModel(baseDir, model) {
+  const validated = validateModel(model);
+  if (!validated.name) return false;
+  const data = readModelsFile(baseDir);
+  const idx = data.models.findIndex(m => m.name === validated.name);
+  if (idx >= 0) {
+    data.models[idx] = validated;
+  } else {
+    data.models.push(validated);
+  }
+  writeModelsFile(baseDir, data);
+  return true;
+}
+
+function deleteModel(baseDir, name) {
+  const data = readModelsFile(baseDir);
+  const idx = data.models.findIndex(m => m.name === name);
+  if (idx < 0) return false;
+  data.models.splice(idx, 1);
+  writeModelsFile(baseDir, data);
+  return true;
+}
+
+function validateModel(m) {
+  const result = {
+    name: typeof m.name === 'string' ? m.name.trim() : '',
+    label: typeof m.label === 'string' ? m.label : (m.name || ''),
+    description: typeof m.description === 'string' ? m.description : '',
+    providerKey: typeof m.providerKey === 'string' ? m.providerKey : 'custom',
+    provider: typeof m.provider === 'string' ? m.provider : 'openai',
+    modelId: typeof m.modelId === 'string' ? m.modelId : '',
+    systemPromptMode: ['replace', 'prepend', 'append', 'passthrough'].includes(m.systemPromptMode)
+      ? m.systemPromptMode : 'replace',
+    toolOverrides: (m.toolOverrides && typeof m.toolOverrides === 'object') ? m.toolOverrides : {},
+    reasoning: !!m.reasoning,
+    contextWindow: typeof m.contextWindow === 'number' ? m.contextWindow : null,
+    maxOutputTokens: typeof m.maxOutputTokens === 'number' ? m.maxOutputTokens : null,
+  };
+  // Custom provider models can have their own apiBaseUrl/apiKey
+  if (m.providerKey === 'custom') {
+    result.apiBaseUrl = typeof m.apiBaseUrl === 'string' ? m.apiBaseUrl : '';
+    result.apiKey = typeof m.apiKey === 'string' ? m.apiKey : '';
+  }
+  // Custom system prompt override (only store if provided)
+  if (typeof m.systemPrompt === 'string' && m.systemPrompt.trim()) {
+    result.systemPrompt = m.systemPrompt;
+  }
+  return result;
+}
+
+// --- Provider CRUD ---
+
+function listProviders(baseDir) {
+  const data = readModelsFile(baseDir);
+  return Object.entries(data.providers).map(([key, p]) => ({
+    key,
+    label: p.label || key,
+    apiBaseUrl: p.apiBaseUrl || '',
+    apiKey: p.apiKey || '',
+  }));
+}
+
+function saveProvider(baseDir, key, provider) {
+  if (!key || typeof key !== 'string') return false;
+  const data = readModelsFile(baseDir);
+  data.providers[key] = {
+    label: typeof provider.label === 'string' ? provider.label : key,
+    apiBaseUrl: typeof provider.apiBaseUrl === 'string' ? provider.apiBaseUrl : '',
+    apiKey: typeof provider.apiKey === 'string' ? provider.apiKey : '',
+  };
+  writeModelsFile(baseDir, data);
+  return true;
+}
+
+function deleteProvider(baseDir, key) {
+  const data = readModelsFile(baseDir);
+  if (!data.providers[key]) return false;
+  const inUse = data.models.some(m => m.providerKey === key);
+  if (inUse) return false;
+  delete data.providers[key];
+  writeModelsFile(baseDir, data);
+  return true;
+}
+
 // --- Helpers ---
 
 function isValidName(name) {
@@ -509,4 +769,13 @@ module.exports = {
   listHooks,
   saveHook,
   deleteHook,
+  listModels,
+  loadModel,
+  saveModel,
+  deleteModel,
+  validateModel,
+  listProviders,
+  saveProvider,
+  deleteProvider,
+  getDefaultSystemPrompt,
 };

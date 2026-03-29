@@ -23,7 +23,7 @@
       <nav class="header-tabs" id="headerTabs">
         <button class="header-tab" data-view="dashboard">Inspector</button>
         <button class="header-tab active" data-view="claude">Claude</button>
-        <button class="header-tab" data-view="capabilities">Capabilities</button>
+        <button class="header-tab" data-view="capabilities">Profiles</button>
       </nav>
     </div>
     <div class="header-center">
@@ -660,6 +660,7 @@
         <div class="ref-stat"><span class="ref-stat-value" id="capAgentCount">0</span><span class="ref-stat-label">Agents</span></div>
         <div class="ref-stat"><span class="ref-stat-value" id="capHookCount">0</span><span class="ref-stat-label">Hooks</span></div>
         <div class="ref-stat"><span class="ref-stat-value" id="capMcpCount">0</span><span class="ref-stat-label">MCP Tools</span></div>
+        <div class="ref-stat"><span class="ref-stat-value" id="capModelCount">0</span><span class="ref-stat-label">Models</span></div>
       </div>
 
       <!-- Section tabs -->
@@ -669,6 +670,7 @@
         <button class="ref-nav-btn" data-section="agents">Agents</button>
         <button class="ref-nav-btn" data-section="hooks">Hooks</button>
         <button class="ref-nav-btn" data-section="mcp">MCP Tools</button>
+        <button class="ref-nav-btn" data-section="models">Models</button>
       </div>
 
       <!-- ===================== TOOLS ===================== -->
@@ -683,8 +685,8 @@
           <em>allow / ask / deny</em> rules evaluated in that priority order. Rules live in <code>settings.json</code> at user, project, or managed scope.
           The <code>--disallowedTools</code> CLI flag (used by profiles here) adds session-scoped deny rules on top of settings.
           <br><br>
-          Toggle the checkbox on each card to disallow a tool for the current profile.
-          Disabled tools are passed as <code>--disallowedTools</code> flags when spawning <code>claude&nbsp;-p</code>.
+          Toggle the checkbox on each tool to enable or disable it for the current profile.
+          Unchecked tools are passed as <code>--disallowedTools</code> flags when spawning <code>claude&nbsp;-p</code>.
         </div>
 
         <div class="ref-filter" id="refFilter">
@@ -1470,6 +1472,21 @@
       <!-- ===================== MCP TOOLS ===================== -->
       <div class="ref-panel" id="ref-mcp"></div>
 
+      <!-- ===================== MODELS ===================== -->
+      <div class="ref-panel" id="ref-models">
+        <div class="ref-intro">
+          <strong>Models</strong> are grouped by API provider. Set the API key once per provider — all models under that provider share it.
+          The proxy translates requests from Anthropic format to OpenAI-compatible format and streams responses back.
+          <br><br>
+          <strong>API keys</strong> are stored locally in <code>capabilities/models.json</code> (gitignored). Set them here or edit the file directly.
+        </div>
+        <div class="cap-section-header">
+          <span>Providers &amp; Models</span>
+          <button class="cap-new-btn" id="capNewModel">+ New Model</button>
+        </div>
+        <div id="capModelList"></div>
+      </div><!-- /ref-models -->
+
     </div><!-- /ref-container -->
   </div><!-- /view-capabilities -->
 
@@ -1500,17 +1517,14 @@
               </div>
 
               <div class="pm-form-group">
-                <h4>Model &amp; Effort</h4>
+                <h4>Model</h4>
                 <div class="pm-field-row">
-                  <label>Model:
-                    <select id="pmModel">
-                      <option value="">default</option>
-                      <option value="sonnet">sonnet</option>
-                      <option value="opus">opus</option>
-                      <option value="haiku">haiku</option>
-                    </select>
+                  <label class="pm-wide">Model:
+                    <select id="pmModel"></select>
                   </label>
-                  <label>Effort:
+                </div>
+                <div class="pm-field-row" id="pmEffortRow">
+                  <label>Thinking effort:
                     <select id="pmEffort">
                       <option value="">default</option>
                       <option value="low">low</option>
@@ -1519,6 +1533,7 @@
                       <option value="max">max</option>
                     </select>
                   </label>
+                  <span class="pm-model-info" id="pmModelInfo"></span>
                 </div>
               </div>
 
@@ -1548,8 +1563,8 @@
               </div>
 
               <div class="pm-form-group">
-                <h4>Disabled Tools</h4>
-                <p class="cap-modal-hint">Unchecked tools are passed as <code>--disallowedTools</code> to the CLI. Claude cannot use disabled tools.</p>
+                <h4>Tools</h4>
+                <p class="cap-modal-hint">Checked tools are enabled. Unchecked tools are passed as <code>--disallowedTools</code> to the CLI.</p>
                 <div class="pm-tool-grid" id="pmToolGrid"></div>
               </div>
 
@@ -1575,7 +1590,7 @@ model            --model &lt;value&gt;
 effort           --effort &lt;level&gt;
 permission       --permission-mode &lt;mode&gt;
 slash cmds off   --disable-slash-commands
-disabled tools   --disallowedTools T1 T2
+tools            --disallowedTools T1 T2
 max turns        --max-turns &lt;n&gt;
 budget           --max-budget-usd &lt;n&gt;
 append prompt    --append-system-prompt
@@ -1611,11 +1626,11 @@ minimal  plan mode, only Read/Glob/
               <p class="cap-modal-hint"><strong>Append</strong> adds text after Claude's built-in system prompt. Use for additional instructions, coding style preferences, or project-specific context.</p>
               <p class="cap-modal-hint"><strong>Override</strong> completely replaces the default system prompt. Only use when you need full control &mdash; you lose all built-in tool instructions and safety guidelines.</p>
 
-              <h4>Tool restrictions</h4>
-              <p class="cap-modal-hint">Disabled tools are passed via <code>--disallowedTools</code>. Claude will not see these tools and cannot invoke them. Useful for restricting destructive operations (Write, Edit, Bash) in review-only profiles.</p>
+              <h4>Tools</h4>
+              <p class="cap-modal-hint">Unchecked tools are passed via <code>--disallowedTools</code>. Claude will not see these tools and cannot invoke them. Useful for restricting destructive operations (Write, Edit, Bash) in review-only profiles.</p>
 
               <h4>MCP Tools</h4>
-              <p class="cap-modal-hint">The integrated MCP tool server auto-starts with the dashboard and registers with Claude Code. All enabled tools are available across all profiles. Manage tools in the MCP Tools panel of the Capabilities tab.</p>
+              <p class="cap-modal-hint">Custom tools provided by the integrated MCP server. The server auto-starts with the dashboard and all enabled tools are available across all profiles.</p>
 
               <h4>Effort levels</h4>
               <pre class="cap-modal-pre">low     Minimal reasoning, fast
@@ -1877,8 +1892,118 @@ jq -r '.tool_input.command' |
       </div>
     </div>
 
+    <!-- ===================== MODEL MODAL ===================== -->
+    <div class="cap-modal-backdrop hidden" id="modelModal">
+      <div class="cap-modal cap-modal-wide">
+        <div class="cap-modal-header">
+          <h3 id="modelModalTitle">New Model</h3>
+          <button class="cap-modal-close" id="capModelCancel" title="Close">&times;</button>
+        </div>
+        <div class="cap-modal-body">
+          <div class="cap-modal-columns">
+            <div class="cap-modal-main">
+              <div class="pm-form-group">
+                <h4>Identity</h4>
+                <div class="pm-field-row">
+                  <label>Name: <input type="text" id="mmName" placeholder="gpt-4o" pattern="[a-z][a-z0-9._-]*"></label>
+                  <label>Label: <input type="text" id="mmLabel" placeholder="GPT-4o"></label>
+                </div>
+                <div class="pm-field-row">
+                  <label class="pm-wide">Description: <input type="text" id="mmDescription" placeholder="Model description..."></label>
+                </div>
+              </div>
+
+              <div class="pm-form-group">
+                <h4>Provider</h4>
+                <div class="pm-field-row">
+                  <label>Provider group:
+                    <select id="mmProviderKey"></select>
+                  </label>
+                  <label>Protocol adapter:
+                    <select id="mmProvider">
+                      <option value="openai">OpenAI-compatible</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="pm-field-row">
+                  <label>Model ID: <input type="text" id="mmModelId" placeholder="gpt-4o"></label>
+                </div>
+                <div class="pm-field-row mm-custom-fields hidden" id="mmCustomFields">
+                  <label class="pm-wide">API Base URL: <input type="text" id="mmApiBaseUrl" placeholder="https://api.openai.com/v1"></label>
+                  <label class="pm-wide mm-apikey-label">API Key:
+                    <span class="mm-apikey-wrap">
+                      <input type="password" id="mmApiKey" placeholder="sk-..." autocomplete="off">
+                      <button type="button" class="mm-apikey-toggle" id="mmApiKeyToggle" title="Show/hide">&#128065;</button>
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+              <div class="pm-form-group">
+                <h4>System Prompt</h4>
+                <div class="pm-field-row">
+                  <label>Mode:
+                    <select id="mmSystemPromptMode">
+                      <option value="replace">Replace (recommended)</option>
+                      <option value="prepend">Prepend</option>
+                      <option value="append">Append</option>
+                      <option value="passthrough">Passthrough (keep Claude's prompt)</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="pm-field-row">
+                  <label><input type="checkbox" id="mmUseDefaultPrompt" checked> Use default system prompt (auto-derived from model type)</label>
+                </div>
+                <textarea id="mmSystemPrompt" class="cap-modal-code hidden" spellcheck="false" rows="14" placeholder="Custom system prompt for this model..."></textarea>
+              </div>
+
+              <div class="pm-form-group">
+                <h4>Tool Overrides <span class="cap-modal-hint">(optional — per-tool description overrides)</span></h4>
+                <textarea id="mmToolOverrides" class="cap-modal-code" spellcheck="false" rows="4" placeholder='{"Read": "Read a file from disk", "Bash": "Run a shell command"}'></textarea>
+              </div>
+            </div>
+
+            <div class="cap-modal-docs">
+              <h4>Model definition</h4>
+              <pre class="cap-modal-pre"># Each model configures how a specific
+# LLM works within the tool-calling
+# environment.
+
+# API key and base URL come from the
+# provider group — set them once in
+# the Models tab.</pre>
+
+              <h4>Provider group</h4>
+              <p class="cap-modal-hint">Models inherit their API key and base URL from the selected <strong>provider group</strong>. Custom provider models can override both.</p>
+
+              <h4>System prompt mode</h4>
+              <pre class="cap-modal-pre"># replace — swap Claude's 27K prompt
+#   with yours (recommended)
+# prepend — add yours before Claude's
+# append — add yours after Claude's
+# passthrough — keep Claude's as-is</pre>
+
+              <h4>Default system prompt</h4>
+              <p class="cap-modal-hint">The default prompt lists available tools and coding guidelines. Reasoning models get an extra section about thinking capabilities. Uncheck to write a custom prompt.</p>
+
+              <h4>Tool overrides</h4>
+              <p class="cap-modal-hint">JSON object mapping tool names to custom descriptions. Use this if a model struggles with the default tool descriptions. Leave empty to use defaults.</p>
+            </div>
+          </div>
+        </div>
+        <div class="cap-modal-footer">
+          <button class="cap-cancel-btn" id="capModelCancel2">Cancel</button>
+          <button class="cap-save-btn" id="capModelSave">Save</button>
+        </div>
+      </div>
+    </div>
+
   <div id="mcp-modal-root"></div>
-  <script src="app.js"></script>
+  <script src="core.js"></script>
+  <script src="inspector.js"></script>
+  <script src="chat.js"></script>
+  <script src="capabilities.js"></script>
+  <script src="tasks.js"></script>
   <script src="mcp.js"></script>
 </body>
 </html>

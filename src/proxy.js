@@ -3,6 +3,7 @@ const { Readable } = require('stream');
 const { pipeline } = require('stream');
 const SSEPassthrough = require('./sse-passthrough');
 const { generateId, filterRequestHeaders, filterResponseHeaders, sanitizeForDashboard } = require('./utils');
+const { getProvider } = require('./providers/registry');
 
 // Shared state: pending AskUserQuestion interceptions
 // Map<tool_use_id, { questions, resolve, reject }>
@@ -16,7 +17,67 @@ function sendProxyError(res, err) {
   }));
 }
 
-function createProxyRouter(store, broadcaster, targetUrl) {
+// Parse an Anthropic SSE event string ("event: ...\ndata: ...\n\n") into {eventType, data}
+function parseSSEString(eventStr) {
+  const lines = eventStr.split('\n');
+  let eventType = null;
+  let dataStr = null;
+  for (const line of lines) {
+    if (line.startsWith('event: ')) eventType = line.slice(7).trim();
+    if (line.startsWith('data: ')) dataStr = line.slice(6).trim();
+  }
+  if (!eventType || !dataStr) return null;
+  try {
+    return { eventType, data: JSON.parse(dataStr) };
+  } catch {
+    return { eventType, data: dataStr };
+  }
+}
+
+// Shared SSE event tracking for inspector/dashboard (used by both paths)
+function trackSSEEvent(event, interaction, activeToolBlocks, broadcaster) {
+  if (event.eventType === 'message_start') {
+    interaction.timing.ttfb = Date.now() - interaction.timing.startedAt;
+    if (event.data?.message?.usage) {
+      interaction.usage = { ...event.data.message.usage };
+    }
+  }
+  if (event.eventType === 'message_delta' && event.data?.usage) {
+    interaction.usage = { ...interaction.usage, ...event.data.usage };
+  }
+  if (event.eventType === 'message_stop') {
+    interaction.timing.duration = Date.now() - interaction.timing.startedAt;
+    interaction.status = 'complete';
+  }
+
+  // Track tool_use blocks for AskUserQuestion
+  if (event.eventType === 'content_block_start' && event.data?.content_block?.type === 'tool_use') {
+    const cb = event.data.content_block;
+    activeToolBlocks.set(event.data.index, { id: cb.id, name: cb.name, inputJson: '' });
+  }
+  if (event.eventType === 'content_block_delta' && event.data?.delta?.type === 'input_json_delta') {
+    const tb = activeToolBlocks.get(event.data.index);
+    if (tb) tb.inputJson += event.data.delta.partial_json || '';
+  }
+  if (event.eventType === 'content_block_stop') {
+    const tb = activeToolBlocks.get(event.data?.index);
+    if (tb && tb.name === 'AskUserQuestion') {
+      try {
+        const input = JSON.parse(tb.inputJson);
+        pendingQuestions.set(tb.id, { questions: input.questions || [], resolve: null, reject: null });
+      } catch {}
+    }
+    activeToolBlocks.delete(event.data?.index);
+  }
+
+  broadcaster.broadcast({
+    type: 'sse_event',
+    interactionId: interaction.id,
+    event,
+  });
+}
+
+function createProxyRouter(store, broadcaster, targetUrl, getActiveModelDef) {
   const router = express.Router();
 
   router.use(express.json({ limit: '50mb' }));
@@ -108,6 +169,171 @@ function createProxyRouter(store, broadcaster, targetUrl) {
       interaction: sanitizeForDashboard(interaction),
     });
 
+    // --- Check for model translation ---
+    const modelDef = typeof getActiveModelDef === 'function' ? getActiveModelDef() : null;
+    const provider = modelDef ? getProvider(modelDef.provider) : null;
+
+    if (modelDef && !provider) {
+      console.warn(`[proxy] Unknown provider "${modelDef.provider}" for model "${modelDef.name}" — falling through to Anthropic`);
+    }
+
+    if (provider && modelDef) {
+      // --- Translation path: route through non-Anthropic provider ---
+      try {
+        const translated = provider.translateRequest(body, modelDef);
+        console.log(`[proxy] Translating to ${modelDef.name} (${modelDef.provider}) → ${translated.url}`);
+
+        // Update interaction to reflect what was actually sent
+        interaction.request.model = modelDef.label || modelDef.name;
+        interaction.request.max_tokens = translated.body.max_tokens;
+        interaction.endpoint = translated.url;
+        interaction.translatedFrom = body.model; // preserve original for reference
+        broadcaster.broadcast({
+          type: 'interaction:update',
+          interaction: sanitizeForDashboard(interaction),
+        });
+
+        const upstream = await fetch(translated.url, {
+          method: 'POST',
+          headers: translated.headers,
+          body: JSON.stringify(translated.body),
+        });
+
+        interaction.response.status = upstream.status;
+
+        // Translation always uses streaming (translateRequest forces stream:true)
+        if (upstream.ok) {
+          res.writeHead(200, {
+            'content-type': 'text/event-stream',
+            'cache-control': 'no-cache',
+            'connection': 'keep-alive',
+            'x-accel-buffering': 'no',
+          });
+
+          const streamState = provider.createStreamState();
+          const activeToolBlocks = new Map();
+
+          // Process OpenAI SSE and translate to Anthropic SSE
+          const nodeStream = Readable.fromWeb(upstream.body);
+          let buffer = '';
+
+          nodeStream.on('data', (chunk) => {
+            buffer += chunk.toString();
+            const lines = buffer.split('\n');
+            buffer = lines.pop(); // keep incomplete line
+
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                const data = line.slice(6).trim();
+                if (!data) continue;
+
+                const anthropicEvents = provider.translateSSEChunk(data, streamState);
+                for (const eventStr of anthropicEvents) {
+                  res.write(eventStr);
+
+                  // Parse the translated event for inspector/dashboard tracking
+                  const parsed = parseSSEString(eventStr);
+                  if (parsed) {
+                    interaction.response.sseEvents.push(parsed);
+                    trackSSEEvent(parsed, interaction, activeToolBlocks, broadcaster);
+                  }
+                }
+              }
+            }
+          });
+
+          nodeStream.on('end', () => {
+            // Process any remaining buffer
+            if (buffer.trim()) {
+              const remaining = buffer.trim();
+              if (remaining.startsWith('data: ')) {
+                const data = remaining.slice(6).trim();
+                if (data) {
+                  const anthropicEvents = provider.translateSSEChunk(data, streamState);
+                  for (const eventStr of anthropicEvents) {
+                    res.write(eventStr);
+                    const parsed = parseSSEString(eventStr);
+                    if (parsed) {
+                      interaction.response.sseEvents.push(parsed);
+                      trackSSEEvent(parsed, interaction, activeToolBlocks, broadcaster);
+                    }
+                  }
+                }
+              }
+            }
+
+            if (!interaction.timing.duration) {
+              interaction.timing.duration = Date.now() - interaction.timing.startedAt;
+            }
+            if (interaction.status === 'pending' || interaction.status === 'intercepted') {
+              interaction.status = 'complete';
+            }
+            store.save(interaction.id);
+            broadcaster.broadcast({
+              type: 'interaction:complete',
+              interaction: sanitizeForDashboard(interaction),
+            });
+            res.end();
+          });
+
+          nodeStream.on('error', (err) => {
+            console.error('Translation stream error:', err.message);
+            interaction.status = 'error';
+            interaction.response.error = err.message;
+            interaction.timing.duration = Date.now() - interaction.timing.startedAt;
+            store.save(interaction.id);
+            broadcaster.broadcast({
+              type: 'interaction:error',
+              interactionId: interaction.id,
+              error: err.message,
+            });
+            if (!res.writableEnded) res.end();
+          });
+        } else {
+          // Non-streaming or error from translated provider
+          const responseBody = await upstream.text();
+          interaction.timing.ttfb = Date.now() - interaction.timing.startedAt;
+          interaction.timing.duration = Date.now() - interaction.timing.startedAt;
+          interaction.status = upstream.ok ? 'complete' : 'error';
+
+          // For errors from translated provider, wrap in Anthropic error format
+          if (!upstream.ok) {
+            const errorBody = {
+              type: 'error',
+              error: { type: 'api_error', message: `Provider ${modelDef.name} error (${upstream.status}): ${responseBody.slice(0, 500)}` },
+            };
+            interaction.response.body = errorBody;
+            res.writeHead(upstream.status, { 'content-type': 'application/json' });
+            res.end(JSON.stringify(errorBody));
+          } else {
+            // Non-streaming success — translate response body
+            try { interaction.response.body = JSON.parse(responseBody); }
+            catch { interaction.response.body = responseBody; }
+            res.writeHead(200, { 'content-type': 'application/json' });
+            res.end(responseBody);
+          }
+
+          store.save(interaction.id);
+          broadcaster.broadcast({
+            type: 'interaction:complete',
+            interaction: sanitizeForDashboard(interaction),
+          });
+        }
+      } catch (err) {
+        console.error('Translation proxy error:', err.message);
+        interaction.timing.duration = Date.now() - interaction.timing.startedAt;
+        interaction.status = 'error';
+        interaction.response.error = err.message;
+        sendProxyError(res, err);
+        store.save(interaction.id);
+        broadcaster.broadcast({
+          type: 'interaction:error',
+          interactionId: interaction.id,
+          error: err.message,
+        });
+      }
+    } else {
+    // --- Standard Anthropic passthrough ---
     try {
       const upstream = await fetch(`${targetUrl}/v1/messages`, {
         method: 'POST',
@@ -267,6 +493,7 @@ function createProxyRouter(store, broadcaster, targetUrl) {
         error: err.message,
       });
     }
+    } // end standard Anthropic passthrough
   });
 
   // POST /v1/messages/count_tokens
