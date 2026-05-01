@@ -1,1 +1,28 @@
-[]
+[
+  {
+    "id": "sess-1777668966069",
+    "cwd": "/home/hp/bin",
+    "title": null,
+    "settings": {
+      "modelMap": {
+        "opus": null,
+        "sonnet": null,
+        "haiku": null
+      }
+    },
+    "savedAt": 1777669123775
+  },
+  {
+    "id": "sess-1777668590013",
+    "cwd": "/home/hp/claude-doc",
+    "title": null,
+    "settings": {
+      "modelMap": {
+        "opus": null,
+        "sonnet": null,
+        "haiku": null
+      }
+    },
+    "savedAt": 1777668592342
+  }
+]
