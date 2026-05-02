@@ -1,5 +1,18 @@
 [
   {
+    "id": "sess-1777676810398",
+    "cwd": "/home/hp/HIVE",
+    "title": null,
+    "settings": {
+      "modelMap": {
+        "opus": null,
+        "sonnet": null,
+        "haiku": null
+      }
+    },
+    "savedAt": 1777678983096
+  },
+  {
     "id": "sess-1777668966069",
     "cwd": "/home/hp/bin",
     "title": null,
